@@ -39,6 +39,13 @@ const LABELS = {
   panda: "Panda 8",
 };
 
+const SUIT_NAMES = {
+  H: "红桃",
+  D: "方片",
+  C: "草花",
+  S: "黑桃",
+};
+
 const dom = {
   bankroll: document.querySelector("#bankroll"),
   roundNumber: document.querySelector("#round-number"),
@@ -289,7 +296,11 @@ function settleRound() {
   if (winner === "player") {
     payout += pay("player", 1);
   } else if (winner === "banker") {
-    payout += dragon ? push("banker") : pay("banker", 1);
+    if (dragon) {
+      payout += push("banker");
+    } else {
+      payout += pay("banker", 1);
+    }
   } else {
     payout += push("player") + push("banker") + pay("tie", 8);
   }
@@ -305,6 +316,7 @@ function settleRound() {
     dragon,
     panda,
     payout,
+    bankerPushOnDragon: dragon && state.bets.banker > 0,
     bets: { ...state.bets },
     playerCards: [...state.player],
     bankerCards: [...state.banker],
@@ -327,7 +339,7 @@ function push(key) {
 function buildOutcomeMessage(outcome) {
   const winnerLabel = outcome.winner === "tie" ? "和" : LABELS[outcome.winner];
   const bonuses = [
-    outcome.dragon ? "Dragon 7 命中 40:1" : "",
+    outcome.dragon ? "Dragon 7 命中 40:1，庄主注 Push 不赔" : "",
     outcome.panda ? "Panda 8 命中 25:1" : "",
   ].filter(Boolean).join("，");
   return `${winnerLabel}赢，闲 ${outcome.playerTotal} / 庄 ${outcome.bankerTotal}${bonuses ? `，${bonuses}` : ""}。`;
@@ -366,11 +378,17 @@ function renderCards(host, cards) {
 
 function buildCard(card) {
   const element = document.createElement("div");
-  element.className = `card${card.red ? " red" : ""}${card.fresh ? " new" : ""}${card.slow ? " slow" : ""}`;
+  element.className = `card suit-${card.suit.toLowerCase()}${card.red ? " red" : ""}${card.fresh ? " new" : ""}${card.slow ? " slow" : ""}`;
+  element.setAttribute("aria-label", `${card.rank}${SUIT_NAMES[card.suit]}`);
   element.innerHTML = `
-    <div class="corner"><span>${card.rank}</span><span>${card.symbol}</span></div>
+    <div class="corner"><span>${card.rank}</span><span class="corner-suit">${card.symbol}</span></div>
+    <div class="pip-field" aria-hidden="true">
+      <span class="pip ghost top">${card.symbol}</span>
+      <span class="pip main">${card.symbol}</span>
+      <span class="pip ghost bottom">${card.symbol}</span>
+    </div>
     <div class="face"><span class="rank">${card.rank}</span><span class="suit">${card.symbol}</span></div>
-    <div class="corner bottom"><span>${card.rank}</span><span>${card.symbol}</span></div>
+    <div class="corner bottom"><span>${card.rank}</span><span class="corner-suit">${card.symbol}</span></div>
   `;
   return element;
 }
@@ -446,12 +464,20 @@ function renderLastResult() {
     <strong>${buildOutcomeMessage(outcome)}</strong><br>
     闲牌：${formatCards(outcome.playerCards)}<br>
     庄牌：${formatCards(outcome.bankerCards)}<br>
+    ${buildSettlementNote(outcome)}
     本局返还：${formatMoney(outcome.payout)}
   `;
 }
 
 function formatCards(cards) {
   return cards.map((card) => `${card.rank}${card.symbol}`).join(" ");
+}
+
+function buildSettlementNote(outcome) {
+  if (outcome.bankerPushOnDragon) {
+    return `庄主注：Dragon 7 不付 1:1，只退本金 ${formatMoney(outcome.bets.banker)}。<br>`;
+  }
+  return "";
 }
 
 function formatMoney(amount) {

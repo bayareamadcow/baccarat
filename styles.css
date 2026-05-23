@@ -271,21 +271,38 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0;
-  min-height: 156px;
+  min-height: 142px;
 }
 
 .card {
-  width: 92px;
-  height: 132px;
-  margin-left: -16px;
-  border-radius: 12px;
-  background: var(--card);
+  position: relative;
+  isolation: isolate;
+  width: 82px;
+  height: 118px;
+  margin-left: -36px;
+  overflow: hidden;
+  border-radius: 13px;
+  border: 1px solid #e8dfc9;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.95), transparent 28%),
+    linear-gradient(145deg, #fffdf6 0%, #f7f0df 100%);
   color: var(--ink);
-  padding: 10px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.36);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 255, 255, 0.62),
+    0 16px 32px rgba(0, 0, 0, 0.36);
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  z-index: -1;
+  border: 1px solid rgba(25, 30, 24, 0.08);
+  border-radius: 10px;
 }
 
 .card:first-child {
@@ -293,6 +310,16 @@ h1 {
 }
 
 .card.red {
+  color: #c5283d;
+}
+
+.card.suit-s,
+.card.suit-c {
+  color: #111713;
+}
+
+.card.suit-h,
+.card.suit-d {
   color: #c5283d;
 }
 
@@ -305,11 +332,15 @@ h1 {
 }
 
 .corner {
+  position: relative;
+  z-index: 2;
   display: grid;
   justify-items: center;
-  width: 1.2em;
+  width: 1.25em;
   font-weight: 900;
   line-height: 0.95;
+  font-size: 0.82rem;
+  letter-spacing: -0.04em;
 }
 
 .corner.bottom {
@@ -317,19 +348,70 @@ h1 {
   transform: rotate(180deg);
 }
 
+.corner-suit {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.98rem;
+  line-height: 0.95;
+}
+
+.pip-field {
+  position: absolute;
+  inset: 20px 12px;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.pip {
+  position: absolute;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+}
+
+.pip.main {
+  font-size: 3rem;
+  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.75));
+}
+
+.pip.ghost {
+  font-size: 1.18rem;
+  opacity: 0.16;
+}
+
+.pip.ghost.top {
+  top: 4px;
+  left: 8px;
+}
+
+.pip.ghost.bottom {
+  right: 8px;
+  bottom: 4px;
+  transform: rotate(180deg);
+}
+
 .face {
+  position: relative;
+  z-index: 1;
   display: grid;
   justify-items: center;
-  margin: auto 0;
+  align-content: center;
+  margin: auto 0 17px;
   font-weight: 900;
 }
 
 .face .rank {
-  font-size: 1.4rem;
+  min-width: 32px;
+  border-radius: 999px;
+  background: rgba(255, 253, 245, 0.78);
+  box-shadow: 0 4px 14px rgba(30, 23, 12, 0.08);
+  font-size: 1.18rem;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .face .suit {
-  font-size: 2.5rem;
+  display: none;
   line-height: 0.9;
 }
 
