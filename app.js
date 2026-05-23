@@ -4,6 +4,9 @@ const STARTING_BANKROLL = 5000;
 const CUT_CARD_REMAINING = 18;
 const DEAL_MS = 300;
 const THIRD_CARD_PAUSE_MS = 720;
+const ROAD_ROWS = 6;
+const BIG_ROAD_MIN_COLUMNS = 18;
+const DERIVED_ROAD_MIN_COLUMNS = 12;
 const BET_KEYS = ["player", "panda", "tie", "dragon", "banker"];
 const CHIPS = [25, 50, 100, 200, 500];
 
@@ -61,7 +64,11 @@ const dom = {
   newShoeButton: document.querySelector("#new-shoe-btn"),
   chipRack: document.querySelector("#chip-rack"),
   bigRoad: document.querySelector("#big-road"),
+  bigEyeRoad: document.querySelector("#big-eye-road"),
+  smallRoad: document.querySelector("#small-road"),
+  cockroachRoad: document.querySelector("#cockroach-road"),
   beadRoad: document.querySelector("#bead-road"),
+  forecastGrid: document.querySelector("#forecast-grid"),
   statsList: document.querySelector("#stats-list"),
   lastResult: document.querySelector("#last-result"),
   resultCard: document.querySelector("#result-card"),
@@ -409,31 +416,21 @@ function renderBets() {
 }
 
 function renderRoads() {
-  dom.bigRoad.replaceChildren();
-  const cells = 18 * 6;
-  for (let index = 0; index < cells; index += 1) {
-    const cell = document.createElement("div");
-    cell.className = "road-cell";
-    const outcome = state.history[cells - 1 - index];
-    if (outcome) cell.appendChild(buildMark(outcome));
-    dom.bigRoad.appendChild(cell);
-  }
-
-  dom.beadRoad.replaceChildren();
-  for (let index = 0; index < 40; index += 1) {
-    const cell = document.createElement("div");
-    cell.className = "mini-cell";
-    const outcome = state.history[39 - index];
-    if (outcome) cell.appendChild(buildMark(outcome, true));
-    dom.beadRoad.appendChild(cell);
-  }
+  const outcomes = [...state.history].reverse();
+  const bigRoad = buildBigRoad(outcomes);
+  renderBigRoad(bigRoad);
+  renderDerivedRoad(dom.bigEyeRoad, buildDerivedRoad(bigRoad, 1), "hollow");
+  renderDerivedRoad(dom.smallRoad, buildDerivedRoad(bigRoad, 2), "solid");
+  renderDerivedRoad(dom.cockroachRoad, buildDerivedRoad(bigRoad, 3), "slash");
+  renderBeadRoad(outcomes);
+  renderForecast(outcomes);
 
   const stats = {
-    庄: state.history.filter((item) => item.winner === "banker").length,
-    闲: state.history.filter((item) => item.winner === "player").length,
-    和: state.history.filter((item) => item.winner === "tie").length,
-    Dragon: state.history.filter((item) => item.dragon).length,
-    Panda: state.history.filter((item) => item.panda).length,
+    庄: outcomes.filter((item) => item.winner === "banker").length,
+    闲: outcomes.filter((item) => item.winner === "player").length,
+    和: outcomes.filter((item) => item.winner === "tie").length,
+    Dragon: outcomes.filter((item) => item.dragon).length,
+    Panda: outcomes.filter((item) => item.panda).length,
   };
   dom.statsList.replaceChildren();
   Object.entries(stats).forEach(([label, value]) => {
@@ -443,12 +440,233 @@ function renderRoads() {
   });
 }
 
-function buildMark(outcome, small = false) {
+function buildBigRoad(outcomes) {
+  const placements = [];
+  const occupied = new Set();
+  let lastWinner = null;
+  let col = 0;
+  let row = 0;
+
+  outcomes.forEach((outcome) => {
+    if (outcome.winner === "tie") {
+      if (placements.length > 0) {
+        placements[placements.length - 1].ties += 1;
+      }
+      return;
+    }
+
+    if (!lastWinner) {
+      col = 0;
+      row = 0;
+    } else if (outcome.winner === lastWinner) {
+      const nextRow = row + 1;
+      if (nextRow < ROAD_ROWS && !occupied.has(roadKey(col, nextRow))) {
+        row = nextRow;
+      } else {
+        col += 1;
+      }
+    } else {
+      col = getMaxColumn(placements) + 1;
+      row = 0;
+    }
+
+    const placement = { col, row, outcome, winner: outcome.winner, ties: 0 };
+    placements.push(placement);
+    occupied.add(roadKey(col, row));
+    lastWinner = outcome.winner;
+  });
+
+  return {
+    placements,
+    occupied,
+    heights: buildColumnHeights(placements),
+  };
+}
+
+function buildColumnHeights(placements) {
+  const heights = new Map();
+  placements.forEach((placement) => {
+    const current = heights.get(placement.col) || 0;
+    heights.set(placement.col, Math.max(current, placement.row + 1));
+  });
+  return heights;
+}
+
+function buildDerivedRoad(bigRoad, lookback) {
+  const marks = [];
+  bigRoad.placements.forEach((placement) => {
+    const color = getDerivedColor(bigRoad, placement, lookback);
+    if (color) {
+      marks.push({ color, source: placement });
+    }
+  });
+  return buildColorRoad(marks);
+}
+
+function getDerivedColor(bigRoad, placement, lookback) {
+  if (placement.row === 0) {
+    if (placement.col - lookback - 1 < 0) return null;
+    const previousDepth = bigRoad.heights.get(placement.col - 1) || 0;
+    const compareDepth = bigRoad.heights.get(placement.col - 1 - lookback) || 0;
+    return previousDepth === compareDepth ? "red" : "blue";
+  }
+
+  if (placement.col - lookback < 0) return null;
+  const sameRowExists = bigRoad.occupied.has(roadKey(placement.col - lookback, placement.row));
+  const aboveExists = bigRoad.occupied.has(roadKey(placement.col - lookback, placement.row - 1));
+  return sameRowExists === aboveExists ? "red" : "blue";
+}
+
+function buildColorRoad(marks) {
+  const placements = [];
+  const occupied = new Set();
+  let lastColor = null;
+  let col = 0;
+  let row = 0;
+
+  marks.forEach((mark) => {
+    if (!lastColor) {
+      col = 0;
+      row = 0;
+    } else if (mark.color === lastColor) {
+      const nextRow = row + 1;
+      if (nextRow < ROAD_ROWS && !occupied.has(roadKey(col, nextRow))) {
+        row = nextRow;
+      } else {
+        col += 1;
+      }
+    } else {
+      col = getMaxColumn(placements) + 1;
+      row = 0;
+    }
+
+    placements.push({ col, row, ...mark });
+    occupied.add(roadKey(col, row));
+    lastColor = mark.color;
+  });
+
+  return placements;
+}
+
+function renderBigRoad(bigRoad) {
+  const columns = Math.max(BIG_ROAD_MIN_COLUMNS, getMaxColumn(bigRoad.placements) + 1);
+  const placementMap = new Map(bigRoad.placements.map((placement) => [roadKey(placement.col, placement.row), placement]));
+  renderRoadMatrix(dom.bigRoad, columns, ROAD_ROWS, "road-cell", (cell, col, row) => {
+    const placement = placementMap.get(roadKey(col, row));
+    if (placement) cell.appendChild(buildBigRoadMark(placement));
+  });
+}
+
+function renderDerivedRoad(host, placements, style) {
+  const columns = Math.max(DERIVED_ROAD_MIN_COLUMNS, getMaxColumn(placements) + 1);
+  const placementMap = new Map(placements.map((placement) => [roadKey(placement.col, placement.row), placement]));
+  renderRoadMatrix(host, columns, ROAD_ROWS, "mini-cell", (cell, col, row) => {
+    const placement = placementMap.get(roadKey(col, row));
+    if (placement) cell.appendChild(buildDerivedMark(placement.color, style));
+  });
+}
+
+function renderBeadRoad(outcomes) {
+  const columns = Math.max(8, Math.ceil(outcomes.length / ROAD_ROWS));
+  renderRoadMatrix(dom.beadRoad, columns, ROAD_ROWS, "mini-cell", (cell, col, row) => {
+    const outcome = outcomes[col * ROAD_ROWS + row];
+    if (outcome) cell.appendChild(buildOutcomeMark(outcome, "bead"));
+  });
+}
+
+function renderForecast(outcomes) {
+  dom.forecastGrid.replaceChildren();
+  ["banker", "player"].forEach((winner) => {
+    const simulated = [...outcomes, createForecastOutcome(winner)];
+    const bigRoad = buildBigRoad(simulated);
+    const latest = bigRoad.placements[bigRoad.placements.length - 1];
+    const card = document.createElement("div");
+    card.className = `forecast-option ${winner}`;
+    card.innerHTML = `<strong>${LABELS[winner]}</strong>`;
+
+    [
+      ["大眼", 1, "hollow"],
+      ["小路", 2, "solid"],
+      ["小强", 3, "slash"],
+    ].forEach(([label, lookback, style]) => {
+      const row = document.createElement("span");
+      const color = latest ? getDerivedColor(bigRoad, latest, lookback) : null;
+      row.append(label);
+      row.appendChild(color ? buildDerivedMark(color, style) : buildPendingMark());
+      card.appendChild(row);
+    });
+
+    dom.forecastGrid.appendChild(card);
+  });
+}
+
+function renderRoadMatrix(host, columns, rows, cellClass, fillCell) {
+  host.replaceChildren();
+  host.style.setProperty("--columns", String(columns));
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < columns; col += 1) {
+      const cell = document.createElement("div");
+      cell.className = cellClass;
+      fillCell(cell, col, row);
+      host.appendChild(cell);
+    }
+  }
+}
+
+function buildBigRoadMark(placement) {
+  const mark = buildOutcomeMark(placement.outcome, "big");
+  if (placement.ties > 0) {
+    mark.classList.add("has-tie");
+    const tie = document.createElement("span");
+    tie.className = "tie-stroke";
+    mark.appendChild(tie);
+    if (placement.ties > 1) {
+      const badge = document.createElement("span");
+      badge.className = "tie-badge";
+      badge.textContent = placement.ties;
+      mark.appendChild(badge);
+    }
+  }
+  return mark;
+}
+
+function buildOutcomeMark(outcome, mode = "bead") {
   const mark = document.createElement("span");
-  mark.className = `mark ${outcome.winner}${outcome.dragon ? " dragon" : ""}${outcome.panda ? " panda" : ""}`;
-  mark.textContent = small ? "" : outcome.winner === "banker" ? outcome.bankerTotal : outcome.winner === "player" ? outcome.playerTotal : "和";
+  mark.className = `mark ${mode} ${outcome.winner}${outcome.dragon ? " dragon" : ""}${outcome.panda ? " panda" : ""}`;
+  mark.textContent = mode === "big" ? "" : outcome.winner === "banker" ? outcome.bankerTotal : outcome.winner === "player" ? outcome.playerTotal : "和";
   mark.title = buildOutcomeMessage(outcome);
   return mark;
+}
+
+function buildDerivedMark(color, style) {
+  const mark = document.createElement("span");
+  mark.className = `derived-mark ${color} ${style}`;
+  return mark;
+}
+
+function buildPendingMark() {
+  const mark = document.createElement("span");
+  mark.className = "derived-mark pending";
+  mark.textContent = "--";
+  return mark;
+}
+
+function createForecastOutcome(winner) {
+  return {
+    winner,
+    playerTotal: winner === "player" ? "?" : "?",
+    bankerTotal: winner === "banker" ? "?" : "?",
+    dragon: false,
+    panda: false,
+  };
+}
+
+function getMaxColumn(placements) {
+  return placements.reduce((max, placement) => Math.max(max, placement.col), -1);
+}
+
+function roadKey(col, row) {
+  return `${col}:${row}`;
 }
 
 function renderLastResult() {

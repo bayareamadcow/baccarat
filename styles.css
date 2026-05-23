@@ -142,15 +142,37 @@ h1 {
   color: var(--ivory);
 }
 
-.road-grid {
+.road-scroll {
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  scrollbar-color: rgba(243, 209, 111, 0.42) transparent;
+}
+
+.road-scroll.compact {
+  border: 0;
+}
+
+.road-grid,
+.derived-grid,
+.mini-road {
+  --columns: 18;
+  --road-cell: 26px;
   display: grid;
-  grid-template-columns: repeat(18, 1fr);
-  grid-auto-rows: 26px;
+  grid-template-columns: repeat(var(--columns), var(--road-cell));
+  grid-auto-rows: var(--road-cell);
   gap: 2px;
   padding: 12px;
+  width: max-content;
+  min-width: 100%;
   background:
     linear-gradient(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.04)),
     #eef3ea;
+}
+
+.derived-grid,
+.mini-road {
+  --road-cell: 18px;
+  padding: 8px;
 }
 
 .road-cell,
@@ -166,8 +188,9 @@ h1 {
 }
 
 .mark {
-  width: 18px;
-  height: 18px;
+  position: relative;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -180,9 +203,161 @@ h1 {
 .mark.banker { background: var(--red); }
 .mark.tie { background: var(--green); }
 
+.mark.big {
+  width: 20px;
+  height: 20px;
+  border: 3px solid currentColor;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0;
+}
+
+.mark.big.player {
+  color: var(--blue);
+}
+
+.mark.big.banker {
+  color: var(--red);
+}
+
+.tie-stroke {
+  position: absolute;
+  inset: -2px 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--green);
+  transform: rotate(42deg);
+}
+
+.tie-badge {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  min-width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: white;
+  font-size: 0.55rem;
+  line-height: 1;
+}
+
 .mark.dragon,
 .mark.panda {
   outline: 2px solid var(--gold);
+}
+
+.derived-roads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.road-card {
+  min-width: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.road-card p {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--gold);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.derived-mark {
+  width: 13px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--red);
+}
+
+.derived-mark.blue {
+  color: var(--blue);
+}
+
+.derived-mark.hollow {
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.derived-mark.solid {
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.derived-mark.slash {
+  position: relative;
+}
+
+.derived-mark.slash::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: -1px;
+  width: 3px;
+  height: 15px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(38deg);
+}
+
+.derived-mark.pending {
+  width: auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.forecast-card {
+  grid-column: span 2;
+}
+
+.forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+
+.forecast-option {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.forecast-option strong {
+  font-size: 1rem;
+}
+
+.forecast-option.banker strong {
+  color: var(--red);
+}
+
+.forecast-option.player strong {
+  color: var(--blue);
+}
+
+.forecast-option span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .mini-roads {
@@ -190,17 +365,6 @@ h1 {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 12px;
-}
-
-.mini-roads p {
-  margin: 0 0 8px;
-  color: var(--muted);
-}
-
-.mini-road {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 2px;
 }
 
 .stats-list {
@@ -606,40 +770,267 @@ button:disabled {
 
 @media (max-width: 1180px) {
   .casino-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .casino-grid > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-panel {
+    order: 1;
+  }
+
+  .road-panel {
+    order: 2;
+  }
+
+  .side-panel {
+    order: 3;
   }
 }
 
 @media (max-width: 720px) {
+  .app-shell {
+    width: 100%;
+    margin: 0;
+    padding: 6px;
+  }
+
   .topbar {
     flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 14px;
+    margin-bottom: 8px;
+  }
+
+  .eyebrow {
+    margin-bottom: 3px;
+    font-size: 0.62rem;
+  }
+
+  h1 {
+    font-size: 1.32rem;
+  }
+
+  .hero-copy {
+    display: none;
+  }
+
+  .hud {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .hud-card,
+  .hud button {
+    min-width: 0;
+    padding: 8px 7px;
+    border-radius: 12px;
+  }
+
+  .hud-card span {
+    font-size: 0.62rem;
+  }
+
+  .hud-card strong {
+    font-size: 0.9rem;
   }
 
   .felt {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
-      "shoe"
-      "player"
-      "banker"
-      "status"
-      "bets";
+      "shoe shoe"
+      "player banker"
+      "status status"
+      "bets bets";
+    gap: 8px;
+    min-height: 0;
+    padding: 10px;
+  }
+
+  .felt::before {
+    inset: 7px;
+    border-radius: 18px;
+  }
+
+  .shoe-tower {
+    grid-template-columns: auto 1fr;
+    justify-content: center;
+    align-content: center;
+  }
+
+  .shoe-card {
+    width: 70px;
+    height: 92px;
+    border-radius: 11px;
+    font-size: 0.74rem;
+  }
+
+  .shoe-count {
+    font-size: 0.8rem;
+  }
+
+  .hand-zone {
+    min-height: 132px;
+    padding: 8px;
+    border-radius: 15px;
+  }
+
+  .hand-heading {
+    margin-bottom: 6px;
+    font-size: 0.82rem;
+  }
+
+  .card-row {
+    min-height: 88px;
+  }
+
+  .card {
+    width: 58px;
+    height: 84px;
+    margin-left: -25px;
+    padding: 5px;
+    border-radius: 9px;
+  }
+
+  .card::before {
+    inset: 3px;
+    border-radius: 7px;
+  }
+
+  .corner {
+    font-size: 0.62rem;
+  }
+
+  .corner-suit {
+    font-size: 0.74rem;
+  }
+
+  .pip-field {
+    inset: 14px 8px;
+  }
+
+  .pip.main {
+    font-size: 2.1rem;
+  }
+
+  .pip.ghost {
+    font-size: 0.82rem;
+  }
+
+  .face {
+    margin-bottom: 10px;
+  }
+
+  .face .rank {
+    min-width: 24px;
+    font-size: 0.82rem;
+  }
+
+  .status {
+    min-height: 38px;
+    padding: 8px;
+    border-radius: 12px;
+    font-size: 0.85rem;
   }
 
   .bet-board {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .bet-box {
+    min-height: 62px;
+    border-radius: 12px;
+    padding: 7px;
+  }
+
+  .bet-box span {
+    font-size: 1rem;
+  }
+
+  .bet-box strong,
+  .bet-box em {
+    font-size: 0.78rem;
+  }
+
+  .control-strip {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    padding: 8px;
+    gap: 7px;
+    border-radius: 0 0 14px 14px;
+  }
+
+  .chips {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .chips button {
+    min-width: 58px;
+    padding: 8px 9px;
+    border-width: 3px;
+    font-size: 0.82rem;
+  }
+
+  .control-strip .ghost {
+    flex: 0 0 88px;
+  }
+
+  .deal {
+    flex: 1 1 auto;
+    min-width: 120px;
+    width: auto;
+    margin-left: 0;
+    font-size: 1rem;
+    padding: 10px 12px !important;
   }
 
   .road-grid {
-    grid-template-columns: repeat(9, 1fr);
+    --road-cell: 22px;
+    padding: 9px;
+  }
+
+  .derived-grid,
+  .mini-road {
+    --road-cell: 16px;
+    padding: 7px;
+  }
+
+  .derived-roads {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .forecast-card {
+    grid-column: span 1;
   }
 
   .mini-roads {
     grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px;
   }
 
-  .deal {
-    width: 100%;
-    margin-left: 0;
+  .side-panel {
+    padding-bottom: 8px;
+  }
+
+  .result-card,
+  .rules {
+    margin: 8px;
+    padding: 10px;
+    font-size: 0.88rem;
   }
 }
 

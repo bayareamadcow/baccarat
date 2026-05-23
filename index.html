@@ -28,13 +28,41 @@
           <span>大路</span>
           <strong id="table-code">Table 8-18</strong>
         </div>
-        <div id="big-road" class="road-grid" aria-label="Big road"></div>
-        <div class="mini-roads">
-          <div>
-            <p>珠盘路</p>
-            <div id="bead-road" class="mini-road"></div>
+        <div class="road-scroll">
+          <div id="big-road" class="road-grid" aria-label="Big road"></div>
+        </div>
+        <div class="derived-roads" aria-label="Derived roads and forecast">
+          <div class="road-card">
+            <p>大眼仔</p>
+            <div class="road-scroll compact">
+              <div id="big-eye-road" class="derived-grid"></div>
+            </div>
           </div>
-          <div>
+          <div class="road-card">
+            <p>小路</p>
+            <div class="road-scroll compact">
+              <div id="small-road" class="derived-grid"></div>
+            </div>
+          </div>
+          <div class="road-card">
+            <p>小强路</p>
+            <div class="road-scroll compact">
+              <div id="cockroach-road" class="derived-grid"></div>
+            </div>
+          </div>
+          <div class="road-card forecast-card">
+            <p>Forecast</p>
+            <div id="forecast-grid" class="forecast-grid"></div>
+          </div>
+        </div>
+        <div class="mini-roads">
+          <div class="road-card">
+            <p>珠盘路</p>
+            <div class="road-scroll compact">
+              <div id="bead-road" class="mini-road"></div>
+            </div>
+          </div>
+          <div class="road-card">
             <p>结果统计</p>
             <div id="stats-list" class="stats-list"></div>
           </div>
