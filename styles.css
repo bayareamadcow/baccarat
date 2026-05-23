@@ -238,6 +238,11 @@ h1 {
   transform: rotate(42deg);
 }
 
+.tie-stroke.natural-tie {
+  background: linear-gradient(180deg, var(--gold), var(--green));
+  box-shadow: 0 0 0 1px rgba(243, 209, 111, 0.45);
+}
+
 .tie-badge {
   position: absolute;
   right: -8px;
@@ -251,6 +256,33 @@ h1 {
   color: white;
   font-size: 0.55rem;
   line-height: 1;
+}
+
+.natural-badge {
+  position: absolute;
+  right: -9px;
+  top: -9px;
+  min-width: 18px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #fff1a6, var(--gold));
+  color: #261a04;
+  font-size: 0.48rem;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow:
+    0 0 0 1px rgba(42, 25, 0, 0.28),
+    0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.natural-badge.tie-natural {
+  right: auto;
+  left: -9px;
+  top: auto;
+  bottom: -9px;
 }
 
 .mark.dragon,

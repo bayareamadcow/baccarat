@@ -12,6 +12,7 @@ Rules implemented:
 - Winning and pushed bets animate chips from the winning bet boxes back to the bankroll, with per-bet payout breakdowns.
 - Reload Chips resets the practice bankroll to $5,000, clears unplayed bets, and tracks the reload count.
 - Scoreboard includes Bead Plate, Big Road, Big Eye Boy, Small Road, Cockroach Pig, and a Banker/Player forecast preview for derived-road marks.
+- Big Road marks two-card Natural 8/9 wins with an `N8` or `N9` badge; Natural Tie keeps the tie slash and adds the Natural badge.
 
 Rule references:
 

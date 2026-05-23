@@ -316,6 +316,8 @@ function settleRound() {
   const winner = playerTotal > bankerTotal ? "player" : bankerTotal > playerTotal ? "banker" : "tie";
   const dragon = winner === "banker" && state.banker.length === 3 && bankerTotal === 7;
   const panda = winner === "player" && state.player.length === 3 && playerTotal === 8;
+  const natural = isNaturalResult(playerTotal, bankerTotal);
+  const naturalTotal = natural ? (winner === "banker" ? bankerTotal : playerTotal) : null;
 
   const settlements = [];
   let payout = 0;
@@ -341,6 +343,8 @@ function settleRound() {
     winner,
     playerTotal,
     bankerTotal,
+    natural,
+    naturalTotal,
     dragon,
     panda,
     payout,
@@ -365,6 +369,10 @@ function pay(key, odds) {
 
 function push(key) {
   return state.bets[key] || 0;
+}
+
+function isNaturalResult(playerTotal, bankerTotal) {
+  return state.player.length === 2 && state.banker.length === 2 && (playerTotal >= 8 || bankerTotal >= 8);
 }
 
 function addPaySettlement(settlements, key, odds) {
@@ -402,6 +410,7 @@ function addPushSettlement(settlements, key, reason) {
 function buildOutcomeMessage(outcome) {
   const winnerLabel = outcome.winner === "tie" ? "和" : LABELS[outcome.winner];
   const bonuses = [
+    outcome.natural ? `Natural ${outcome.naturalTotal}` : "",
     outcome.dragon ? "Dragon 7 命中 40:1，庄主注 Push 不赔" : "",
     outcome.panda ? "Panda 8 命中 25:1" : "",
   ].filter(Boolean).join("，");
@@ -509,6 +518,7 @@ function buildBigRoad(outcomes) {
     if (outcome.winner === "tie") {
       if (placements.length > 0) {
         placements[placements.length - 1].ties += 1;
+        placements[placements.length - 1].tieNaturals.push(outcome);
       }
       return;
     }
@@ -528,7 +538,7 @@ function buildBigRoad(outcomes) {
       row = 0;
     }
 
-    const placement = { col, row, outcome, winner: outcome.winner, ties: 0 };
+    const placement = { col, row, outcome, winner: outcome.winner, ties: 0, tieNaturals: [] };
     placements.push(placement);
     occupied.add(roadKey(col, row));
     lastWinner = outcome.winner;
@@ -673,10 +683,18 @@ function renderRoadMatrix(host, columns, rows, cellClass, fillCell) {
 
 function buildBigRoadMark(placement) {
   const mark = buildOutcomeMark(placement.outcome, "big");
+  if (placement.outcome.natural) {
+    mark.classList.add("natural");
+    mark.appendChild(buildNaturalBadge(placement.outcome));
+  }
+
   if (placement.ties > 0) {
     mark.classList.add("has-tie");
     const tie = document.createElement("span");
     tie.className = "tie-stroke";
+    if (placement.tieNaturals.length > 0) {
+      tie.classList.add("natural-tie");
+    }
     mark.appendChild(tie);
     if (placement.ties > 1) {
       const badge = document.createElement("span");
@@ -684,8 +702,21 @@ function buildBigRoadMark(placement) {
       badge.textContent = placement.ties;
       mark.appendChild(badge);
     }
+    const latestNaturalTie = placement.tieNaturals[placement.tieNaturals.length - 1];
+    if (latestNaturalTie) {
+      const badge = buildNaturalBadge(latestNaturalTie);
+      badge.className = "natural-badge tie-natural";
+      mark.appendChild(badge);
+    }
   }
   return mark;
+}
+
+function buildNaturalBadge(outcome) {
+  const badge = document.createElement("span");
+  badge.className = "natural-badge";
+  badge.textContent = `N${outcome.naturalTotal}`;
+  return badge;
 }
 
 function buildOutcomeMark(outcome, mode = "bead") {
