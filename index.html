@@ -10,9 +10,8 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">EZ Baccarat Trainer</p>
-        <h1>Parkwest 风格百家乐</h1>
-        <p class="hero-copy">庄 / 闲 / 和，Dragon 7 40 倍，Panda 8 25 倍。发牌和补牌都有动画，补牌顺序先闲后庄。</p>
+        <p class="eyebrow">Tournament Table</p>
+        <h1>Mad Cow Casino 580</h1>
       </div>
       <div class="hud">
         <div class="hud-card"><span>余额</span><strong id="bankroll">$5,000</strong></div>
@@ -124,6 +123,7 @@
             <button data-chip="500" type="button">$500</button>
           </div>
           <button id="clear-btn" class="ghost" type="button">清下注</button>
+          <button id="repeat-btn" class="ghost repeat" type="button">Repeat Bet</button>
           <button id="deal-btn" class="deal" type="button">发牌</button>
         </div>
       </section>
@@ -157,11 +157,12 @@
         <div id="result-card" class="result-card">
           等待下一局。
         </div>
-        <div class="rules">
-          <h2>规则</h2>
-          <p>8 副牌；A 算 1，10/J/Q/K 算 0，总点数只取个位。</p>
-          <p>Natural 8 / 9 不补牌。若需要补牌，先补闲，再按庄家补牌表补庄。</p>
-          <p>Dragon 7：庄三张 7 点赢，Dragon 赔 40:1，庄主注 Push，不付 1:1。Panda 8：闲三张 8 点赢，Panda 赔 25:1。Tie 赔 8:1。</p>
+        <div class="top-ten-card">
+          <div class="leaderboard-head">
+            <span>Top 10 Players</span>
+            <em>Live leaderboard</em>
+          </div>
+          <div id="top-leaderboard" class="leaderboard top-leaderboard"></div>
         </div>
       </aside>
     </main>

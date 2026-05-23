@@ -807,6 +807,14 @@ h1 {
   color: var(--muted) !important;
 }
 
+.repeat {
+  color: var(--gold) !important;
+  border-color: rgba(243, 209, 111, 0.28) !important;
+  background:
+    linear-gradient(135deg, rgba(243, 209, 111, 0.14), rgba(255, 255, 255, 0.06)) !important;
+  font-weight: 900;
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -816,7 +824,8 @@ button:disabled {
   padding-bottom: 14px;
 }
 
-.tournament-card {
+.tournament-card,
+.top-ten-card {
   margin: 14px;
   padding: 12px;
   border-radius: 18px;
@@ -913,6 +922,12 @@ button:disabled {
 .leaderboard {
   display: grid;
   gap: 7px;
+}
+
+.top-leaderboard {
+  max-height: 460px;
+  overflow-y: auto;
+  padding-right: 3px;
 }
 
 .leaderboard-row {
@@ -1384,17 +1399,6 @@ button:disabled {
 
 .payout-label.push {
   color: #dfe8da;
-}
-
-.rules {
-  margin: 14px;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.rules h2 {
-  margin: 0 0 10px;
-  color: var(--ivory);
 }
 
 @keyframes deal-in {
@@ -1880,6 +1884,10 @@ button:disabled {
     flex: 0 0 88px;
   }
 
+  .control-strip .repeat {
+    flex: 1 1 116px;
+  }
+
   .deal {
     flex: 1 1 auto;
     min-width: 120px;
@@ -1920,7 +1928,8 @@ button:disabled {
     padding-bottom: 8px;
   }
 
-  .tournament-card {
+  .tournament-card,
+  .top-ten-card {
     margin: 8px;
     padding: 10px;
   }
@@ -1941,10 +1950,14 @@ button:disabled {
   }
 
   .result-card,
-  .rules {
+  .top-ten-card {
     margin: 8px;
     padding: 10px;
     font-size: 0.88rem;
+  }
+
+  .top-leaderboard {
+    max-height: 360px;
   }
 
   .settlement-list > span {

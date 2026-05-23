@@ -11,7 +11,7 @@ const BIG_ROAD_MIN_COLUMNS = 18;
 const DERIVED_ROAD_MIN_COLUMNS = 12;
 const BET_KEYS = ["player", "panda", "tie", "dragon", "banker"];
 const CHIPS = [25, 50, 100, 200, 500];
-const LEADERBOARD_OPEN_SEATS = 4;
+const LEADERBOARD_SIZE = 10;
 
 const SUITS = [
   { code: "H", symbol: "♥", red: true },
@@ -65,6 +65,7 @@ const dom = {
   status: document.querySelector("#status"),
   dealButton: document.querySelector("#deal-btn"),
   clearButton: document.querySelector("#clear-btn"),
+  repeatButton: document.querySelector("#repeat-btn"),
   reloadButton: document.querySelector("#reload-btn"),
   newShoeButton: document.querySelector("#new-shoe-btn"),
   chipRack: document.querySelector("#chip-rack"),
@@ -84,6 +85,7 @@ const dom = {
   tournamentHands: document.querySelector("#tournament-hands"),
   tournamentBonus: document.querySelector("#tournament-bonus"),
   leaderboard: document.querySelector("#leaderboard"),
+  topLeaderboard: document.querySelector("#top-leaderboard"),
   tableCode: document.querySelector("#table-code"),
   betBoxes: [...document.querySelectorAll("[data-bet-target]")],
   betAmounts: {
@@ -110,6 +112,7 @@ const state = {
   shoe: [],
   phase: "betting",
   bets: createEmptyBets(),
+  lastBets: null,
   player: [],
   banker: [],
   history: [],
@@ -142,6 +145,7 @@ function bindEvents() {
   });
 
   dom.clearButton.addEventListener("click", clearBets);
+  dom.repeatButton.addEventListener("click", repeatLastBet);
   dom.reloadButton.addEventListener("click", reloadChips);
   dom.dealButton.addEventListener("click", dealRound);
   dom.newShoeButton.addEventListener("click", () => {
@@ -221,6 +225,26 @@ function clearBets() {
   render();
 }
 
+function repeatLastBet() {
+  if (state.phase !== "betting") return;
+  if (!state.lastBets || getBetsTotal(state.lastBets) <= 0) {
+    state.message = "还没有上一局下注可以重复。";
+    render();
+    return;
+  }
+
+  const repeatTotal = getBetsTotal(state.lastBets);
+  if (repeatTotal > state.bankroll) {
+    state.message = `余额不够重复上一局 ${formatMoney(repeatTotal)}。`;
+    render();
+    return;
+  }
+
+  state.bets = cloneBets(state.lastBets);
+  state.message = `已重复上一局下注：${formatMoney(repeatTotal)}。`;
+  render();
+}
+
 function reloadChips() {
   if (state.phase !== "betting") return;
   state.bankroll = STARTING_BANKROLL;
@@ -244,6 +268,7 @@ async function dealRound() {
   }
 
   state.phase = "dealing";
+  state.lastBets = cloneBets(state.bets);
   state.bankroll -= totalBet;
   state.roundNumber += 1;
   state.player = [];
@@ -444,7 +469,18 @@ function handTotal(cards) {
 }
 
 function getTotalBet() {
-  return BET_KEYS.reduce((sum, key) => sum + state.bets[key], 0);
+  return getBetsTotal(state.bets);
+}
+
+function getBetsTotal(bets) {
+  return BET_KEYS.reduce((sum, key) => sum + (bets[key] || 0), 0);
+}
+
+function cloneBets(bets) {
+  return BET_KEYS.reduce((clone, key) => {
+    clone[key] = bets[key] || 0;
+    return clone;
+  }, {});
 }
 
 function updateTournamentStats(outcome, wagered) {
@@ -468,6 +504,10 @@ function render() {
   dom.status.textContent = state.message;
   dom.dealButton.disabled = state.phase !== "betting";
   dom.clearButton.disabled = state.phase !== "betting";
+  dom.repeatButton.disabled = state.phase !== "betting"
+    || !state.lastBets
+    || getBetsTotal(state.lastBets) <= 0
+    || getBetsTotal(state.lastBets) > state.bankroll;
   dom.reloadButton.disabled = state.phase !== "betting";
   dom.newShoeButton.disabled = state.phase !== "betting";
   renderCards(dom.playerCards, state.player);
@@ -1026,7 +1066,12 @@ function renderTournament() {
 }
 
 function renderLeaderboardRows() {
-  dom.leaderboard.replaceChildren();
+  const rows = getLeaderboardRows();
+  renderLeaderboard(dom.leaderboard, rows);
+  renderLeaderboard(dom.topLeaderboard, rows);
+}
+
+function getLeaderboardRows() {
   const rows = [
     {
       rank: 1,
@@ -1040,20 +1085,26 @@ function renderLeaderboardRows() {
     },
   ];
 
-  rows.forEach((row) => dom.leaderboard.appendChild(buildLeaderboardRow(row)));
-
-  for (let seat = 2; seat <= LEADERBOARD_OPEN_SEATS; seat += 1) {
-    dom.leaderboard.appendChild(buildLeaderboardRow({
+  for (let seat = 2; seat <= LEADERBOARD_SIZE; seat += 1) {
+    rows.push({
       rank: seat,
-      name: "等待线上玩家",
+      name: `Open Seat ${seat}`,
       score: null,
       bankroll: null,
       reloads: null,
       hands: null,
       bonus: null,
       waiting: true,
-    }));
+    });
   }
+
+  return rows;
+}
+
+function renderLeaderboard(host, rows) {
+  if (!host) return;
+  host.replaceChildren();
+  rows.forEach((row) => host.appendChild(buildLeaderboardRow(row)));
 }
 
 function buildLeaderboardRow(row) {
