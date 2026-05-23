@@ -10,6 +10,7 @@ const BIG_ROAD_MIN_COLUMNS = 18;
 const DERIVED_ROAD_MIN_COLUMNS = 12;
 const BET_KEYS = ["player", "panda", "tie", "dragon", "banker"];
 const CHIPS = [25, 50, 100, 200, 500];
+const LEADERBOARD_OPEN_SEATS = 4;
 
 const SUITS = [
   { code: "H", symbol: "♥", red: true },
@@ -76,6 +77,12 @@ const dom = {
   lastResult: document.querySelector("#last-result"),
   resultCard: document.querySelector("#result-card"),
   payoutLayer: document.querySelector("#payout-layer"),
+  playerNameInput: document.querySelector("#player-name"),
+  tournamentStatus: document.querySelector("#tournament-status"),
+  tournamentScore: document.querySelector("#tournament-score"),
+  tournamentHands: document.querySelector("#tournament-hands"),
+  tournamentBonus: document.querySelector("#tournament-bonus"),
+  leaderboard: document.querySelector("#leaderboard"),
   tableCode: document.querySelector("#table-code"),
   betBoxes: [...document.querySelectorAll("[data-bet-target]")],
   betAmounts: {
@@ -89,6 +96,12 @@ const dom = {
 
 const state = {
   bankroll: STARTING_BANKROLL,
+  playerName: getSavedPlayerName(),
+  handsPlayed: 0,
+  totalWagered: 0,
+  bonusHits: 0,
+  bestHandNet: 0,
+  lastHandNet: 0,
   reloadCount: 0,
   roundNumber: 0,
   shoeNumber: 0,
@@ -119,6 +132,12 @@ function bindEvents() {
 
   dom.betBoxes.forEach((box) => {
     box.addEventListener("click", () => addBet(box.dataset.betTarget));
+  });
+
+  dom.playerNameInput.addEventListener("input", () => {
+    state.playerName = normalizePlayerName(dom.playerNameInput.value);
+    savePlayerName(state.playerName);
+    renderTournament();
   });
 
   dom.clearButton.addEventListener("click", clearBets);
@@ -355,6 +374,7 @@ function settleRound() {
     playerCards: [...state.player],
     bankerCards: [...state.banker],
   };
+  updateTournamentStats(outcome, getTotalBet());
   state.history.unshift(outcome);
   state.history = state.history.slice(0, 72);
   state.lastOutcome = outcome;
@@ -425,6 +445,16 @@ function getTotalBet() {
   return BET_KEYS.reduce((sum, key) => sum + state.bets[key], 0);
 }
 
+function updateTournamentStats(outcome, wagered) {
+  state.handsPlayed += 1;
+  state.totalWagered += wagered;
+  state.lastHandNet = outcome.net;
+  state.bestHandNet = Math.max(state.bestHandNet, outcome.net);
+  if (outcome.dragon || outcome.panda) {
+    state.bonusHits += 1;
+  }
+}
+
 function render() {
   dom.bankroll.textContent = formatMoney(state.bankroll);
   dom.roundNumber.textContent = String(state.roundNumber);
@@ -443,6 +473,7 @@ function render() {
   renderBets();
   renderRoads();
   renderLastResult();
+  renderTournament();
 }
 
 function renderCards(host, cards) {
@@ -906,6 +937,121 @@ function buildSettlementBreakdown(outcome) {
   }).join("");
 
   return `<div class="settlement-list">${rows}</div>`;
+}
+
+function renderTournament() {
+  const score = getTournamentScore();
+  const room = new URLSearchParams(window.location.search).get("room");
+  dom.tournamentStatus.textContent = room ? `Room ${room}` : "Local Table";
+  dom.tournamentScore.textContent = formatSignedMoney(score);
+  dom.tournamentScore.classList.toggle("positive", score > 0);
+  dom.tournamentScore.classList.toggle("negative", score < 0);
+  dom.tournamentHands.textContent = String(state.handsPlayed);
+  dom.tournamentBonus.textContent = String(state.bonusHits);
+
+  if (document.activeElement !== dom.playerNameInput) {
+    dom.playerNameInput.value = state.playerName;
+  }
+
+  renderLeaderboardRows();
+}
+
+function renderLeaderboardRows() {
+  dom.leaderboard.replaceChildren();
+  const rows = [
+    {
+      rank: 1,
+      name: state.playerName,
+      score: getTournamentScore(),
+      bankroll: state.bankroll,
+      reloads: state.reloadCount,
+      hands: state.handsPlayed,
+      bonus: state.bonusHits,
+      self: true,
+    },
+  ];
+
+  rows.forEach((row) => dom.leaderboard.appendChild(buildLeaderboardRow(row)));
+
+  for (let seat = 2; seat <= LEADERBOARD_OPEN_SEATS; seat += 1) {
+    dom.leaderboard.appendChild(buildLeaderboardRow({
+      rank: seat,
+      name: "等待线上玩家",
+      score: null,
+      bankroll: null,
+      reloads: null,
+      hands: null,
+      bonus: null,
+      waiting: true,
+    }));
+  }
+}
+
+function buildLeaderboardRow(row) {
+  const item = document.createElement("div");
+  item.className = `leaderboard-row${row.self ? " self" : ""}${row.waiting ? " waiting" : ""}`;
+
+  const rank = document.createElement("span");
+  rank.className = "leaderboard-rank";
+  rank.textContent = `#${row.rank}`;
+
+  const avatar = document.createElement("span");
+  avatar.className = "leaderboard-avatar";
+  avatar.textContent = row.waiting ? "..." : getInitials(row.name);
+
+  const main = document.createElement("span");
+  main.className = "leaderboard-main";
+  const name = document.createElement("strong");
+  name.textContent = row.name;
+  const meta = document.createElement("em");
+  meta.textContent = row.waiting
+    ? "Supabase 连接后自动同步"
+    : `${formatMoney(row.bankroll)} · Reload ${row.reloads} · ${row.hands} 手 · Bonus ${row.bonus}`;
+  main.append(name, meta);
+
+  const score = document.createElement("b");
+  score.className = "leaderboard-score";
+  if (row.score === null) {
+    score.textContent = "--";
+  } else {
+    score.textContent = formatSignedMoney(row.score);
+    score.classList.toggle("positive", row.score > 0);
+    score.classList.toggle("negative", row.score < 0);
+  }
+
+  item.append(rank, avatar, main, score);
+  return item;
+}
+
+function getTournamentScore() {
+  return state.bankroll - STARTING_BANKROLL * (state.reloadCount + 1);
+}
+
+function getInitials(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return "P";
+  return [...trimmed].slice(0, 2).join("").toUpperCase();
+}
+
+function normalizePlayerName(value) {
+  const trimmed = value.trim();
+  return trimmed || "Player";
+}
+
+function getSavedPlayerName() {
+  try {
+    return normalizePlayerName(localStorage.getItem("baccaratPlayerName") || "Yang");
+  } catch {
+    return "Yang";
+  }
+}
+
+function savePlayerName(name) {
+  try {
+    localStorage.setItem("baccaratPlayerName", name);
+  } catch {
+    // Local storage can be unavailable in strict browser modes.
+  }
 }
 
 function formatSignedMoney(amount) {

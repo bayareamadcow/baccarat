@@ -129,6 +129,27 @@
       </section>
 
       <aside class="side-panel">
+        <div class="tournament-card">
+          <div class="tournament-heading">
+            <span>Tournament Mode</span>
+            <strong id="tournament-status">Local Table</strong>
+          </div>
+          <label class="player-name-field" for="player-name">
+            玩家名
+            <input id="player-name" maxlength="16" autocomplete="off" value="Yang">
+          </label>
+          <div class="tournament-metrics">
+            <div><span>Score</span><strong id="tournament-score">$0</strong></div>
+            <div><span>Hands</span><strong id="tournament-hands">0</strong></div>
+            <div><span>Bonus</span><strong id="tournament-bonus">0</strong></div>
+          </div>
+          <div class="leaderboard-head">
+            <span>Leader Board</span>
+            <em>Score = 余额 - 买入 - Reload</em>
+          </div>
+          <div id="leaderboard" class="leaderboard"></div>
+        </div>
+
         <div class="panel-title">
           <span>开牌结果</span>
           <strong id="last-result">--</strong>

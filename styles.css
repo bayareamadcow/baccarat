@@ -794,6 +794,186 @@ button:disabled {
   padding-bottom: 14px;
 }
 
+.tournament-card {
+  margin: 14px;
+  padding: 12px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(243, 209, 111, 0.13), transparent 34%),
+    linear-gradient(180deg, rgba(22, 39, 30, 0.96), rgba(4, 10, 7, 0.96));
+  border: 1px solid rgba(243, 209, 111, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.tournament-heading,
+.leaderboard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.tournament-heading span,
+.leaderboard-head span {
+  color: var(--gold);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tournament-heading strong {
+  color: var(--ivory);
+  font-size: 0.82rem;
+}
+
+.player-name-field {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.player-name-field input {
+  width: 100%;
+  border: 1px solid rgba(243, 209, 111, 0.26);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--ivory);
+  padding: 10px 11px;
+  font: inherit;
+  outline: none;
+}
+
+.player-name-field input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(243, 209, 111, 0.14);
+}
+
+.tournament-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tournament-metrics div {
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tournament-metrics span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.tournament-metrics strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--gold);
+  font-size: 0.96rem;
+}
+
+.leaderboard-head {
+  margin: 4px 0 8px;
+}
+
+.leaderboard-head em {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-style: normal;
+  text-align: right;
+}
+
+.leaderboard {
+  display: grid;
+  gap: 7px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.leaderboard-row.self {
+  background:
+    linear-gradient(90deg, rgba(243, 209, 111, 0.14), rgba(255, 255, 255, 0.055));
+  border-color: rgba(243, 209, 111, 0.28);
+}
+
+.leaderboard-row.waiting {
+  opacity: 0.66;
+}
+
+.leaderboard-rank {
+  color: var(--gold);
+  font-weight: 900;
+  font-size: 0.78rem;
+}
+
+.leaderboard-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 32% 25%, rgba(255, 255, 255, 0.24), transparent 28%),
+    linear-gradient(135deg, #0c7c54, #103224);
+  color: var(--ivory);
+  font-size: 0.72rem;
+  font-weight: 900;
+  border: 1px solid rgba(243, 209, 111, 0.3);
+}
+
+.leaderboard-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.leaderboard-main strong,
+.leaderboard-main em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-main strong {
+  color: var(--ivory);
+  font-size: 0.86rem;
+}
+
+.leaderboard-main em {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-style: normal;
+}
+
+.leaderboard-score,
+#tournament-score {
+  color: var(--ivory);
+}
+
+.leaderboard-score.positive,
+#tournament-score.positive {
+  color: var(--green);
+}
+
+.leaderboard-score.negative,
+#tournament-score.negative {
+  color: #ff7786;
+}
+
 .result-card {
   margin: 14px;
   padding: 16px;
@@ -1245,6 +1425,26 @@ button:disabled {
 
   .side-panel {
     padding-bottom: 8px;
+  }
+
+  .tournament-card {
+    margin: 8px;
+    padding: 10px;
+  }
+
+  .tournament-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .leaderboard-row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .leaderboard-score {
+    grid-column: 3;
+    justify-self: start;
+    font-size: 0.84rem;
   }
 
   .result-card,

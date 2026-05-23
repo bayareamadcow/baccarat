@@ -11,6 +11,7 @@ Rules implemented:
 - Third-card draw sequence is animated and dealt Player first, then Banker when required.
 - Winning and pushed bets animate chips from the winning bet boxes back to the bankroll, with per-bet payout breakdowns.
 - Reload Chips resets the practice bankroll to $5,000, clears unplayed bets, and tracks the reload count.
+- Tournament Mode tracks a local leaderboard score, hands played, bonus hits, and reload penalties.
 - Scoreboard includes Bead Plate, Big Road, Big Eye Boy, Small Road, Cockroach Pig, and a Banker/Player forecast preview for derived-road marks.
 - Big Road marks two-card Natural 8/9 wins with an `N8` or `N9` badge; Natural Tie keeps the tie slash and adds the Natural badge.
 - Big Road marks Dragon 7 with a red dragon badge and Panda 8 with a blue panda badge.
