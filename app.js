@@ -4,6 +4,7 @@ const STARTING_BANKROLL = 5000;
 const CUT_CARD_REMAINING = 18;
 const DEAL_MS = 300;
 const THIRD_CARD_PAUSE_MS = 720;
+const PAYOUT_ANIMATION_MS = 1050;
 const ROAD_ROWS = 6;
 const BIG_ROAD_MIN_COLUMNS = 18;
 const DERIVED_ROAD_MIN_COLUMNS = 12;
@@ -72,6 +73,7 @@ const dom = {
   statsList: document.querySelector("#stats-list"),
   lastResult: document.querySelector("#last-result"),
   resultCard: document.querySelector("#result-card"),
+  payoutLayer: document.querySelector("#payout-layer"),
   tableCode: document.querySelector("#table-code"),
   betBoxes: [...document.querySelectorAll("[data-bet-target]")],
   betAmounts: {
@@ -223,7 +225,10 @@ async function dealRound() {
   await dealTo("banker", "庄第二张。");
 
   await playDrawRules();
-  settleRound();
+  const outcome = settleRound();
+  state.phase = "settled";
+  render();
+  await animatePayout(outcome);
   state.phase = "betting";
   state.bets = createEmptyBets();
   render();
@@ -299,21 +304,24 @@ function settleRound() {
   const dragon = winner === "banker" && state.banker.length === 3 && bankerTotal === 7;
   const panda = winner === "player" && state.player.length === 3 && playerTotal === 8;
 
+  const settlements = [];
   let payout = 0;
   if (winner === "player") {
-    payout += pay("player", 1);
+    payout += addPaySettlement(settlements, "player", 1);
   } else if (winner === "banker") {
     if (dragon) {
-      payout += push("banker");
+      payout += addPushSettlement(settlements, "banker", "Dragon 7 Push");
     } else {
-      payout += pay("banker", 1);
+      payout += addPaySettlement(settlements, "banker", 1);
     }
   } else {
-    payout += push("player") + push("banker") + pay("tie", 8);
+    payout += addPushSettlement(settlements, "player", "Tie Push");
+    payout += addPushSettlement(settlements, "banker", "Tie Push");
+    payout += addPaySettlement(settlements, "tie", 8);
   }
 
-  if (dragon) payout += pay("dragon", 40);
-  if (panda) payout += pay("panda", 25);
+  if (dragon) payout += addPaySettlement(settlements, "dragon", 40);
+  if (panda) payout += addPaySettlement(settlements, "panda", 25);
   state.bankroll += payout;
 
   const outcome = {
@@ -323,6 +331,8 @@ function settleRound() {
     dragon,
     panda,
     payout,
+    net: payout - getTotalBet(),
+    settlements,
     bankerPushOnDragon: dragon && state.bets.banker > 0,
     bets: { ...state.bets },
     playerCards: [...state.player],
@@ -332,6 +342,7 @@ function settleRound() {
   state.history = state.history.slice(0, 72);
   state.lastOutcome = outcome;
   state.message = buildOutcomeMessage(outcome);
+  return outcome;
 }
 
 function pay(key, odds) {
@@ -341,6 +352,38 @@ function pay(key, odds) {
 
 function push(key) {
   return state.bets[key] || 0;
+}
+
+function addPaySettlement(settlements, key, odds) {
+  const stake = state.bets[key] || 0;
+  if (stake <= 0) return 0;
+  const profit = stake * odds;
+  const amount = stake + profit;
+  settlements.push({
+    key,
+    label: LABELS[key],
+    type: "win",
+    odds,
+    stake,
+    profit,
+    amount,
+  });
+  return amount;
+}
+
+function addPushSettlement(settlements, key, reason) {
+  const stake = state.bets[key] || 0;
+  if (stake <= 0) return 0;
+  settlements.push({
+    key,
+    label: LABELS[key],
+    type: "push",
+    reason,
+    stake,
+    profit: 0,
+    amount: stake,
+  });
+  return stake;
 }
 
 function buildOutcomeMessage(outcome) {
@@ -683,7 +726,8 @@ function renderLastResult() {
     闲牌：${formatCards(outcome.playerCards)}<br>
     庄牌：${formatCards(outcome.bankerCards)}<br>
     ${buildSettlementNote(outcome)}
-    本局返还：${formatMoney(outcome.payout)}
+    本局返还：${formatMoney(outcome.payout)} / 净输赢：${formatSignedMoney(outcome.net)}
+    ${buildSettlementBreakdown(outcome)}
   `;
 }
 
@@ -696,6 +740,118 @@ function buildSettlementNote(outcome) {
     return `庄主注：Dragon 7 不付 1:1，只退本金 ${formatMoney(outcome.bets.banker)}。<br>`;
   }
   return "";
+}
+
+async function animatePayout(outcome) {
+  if (!dom.payoutLayer || !outcome.settlements.length || prefersReducedMotion()) {
+    return;
+  }
+
+  dom.payoutLayer.replaceChildren();
+  const target = dom.bankroll.closest(".hud-card") || dom.bankroll;
+  const targetRect = target.getBoundingClientRect();
+  const targetPoint = getRectCenter(targetRect);
+
+  outcome.settlements.forEach((settlement, settlementIndex) => {
+    const source = document.querySelector(`[data-bet-target="${settlement.key}"]`);
+    if (!source) return;
+    const sourcePoint = getRectCenter(source.getBoundingClientRect());
+    const color = getPayoutColor(settlement.key, settlement.type);
+    const chipCount = getPayoutChipCount(settlement.amount);
+
+    for (let index = 0; index < chipCount; index += 1) {
+      const chip = document.createElement("span");
+      chip.className = `payout-token ${settlement.type}`;
+      chip.textContent = chipLabel(settlement.amount, chipCount, index);
+      chip.style.setProperty("--from-x", `${sourcePoint.x + (index - 1) * 8}px`);
+      chip.style.setProperty("--from-y", `${sourcePoint.y + (index % 2 ? 8 : -8)}px`);
+      chip.style.setProperty("--to-x", `${targetPoint.x + (index - 1) * 5}px`);
+      chip.style.setProperty("--to-y", `${targetPoint.y + (index % 2 ? -4 : 4)}px`);
+      chip.style.setProperty("--mid-x", `${(sourcePoint.x + targetPoint.x) / 2 + (index - 1) * 12}px`);
+      chip.style.setProperty("--mid-y", `${(sourcePoint.y + targetPoint.y) / 2}px`);
+      chip.style.setProperty("--arc", `${-80 - index * 18}px`);
+      chip.style.setProperty("--delay", `${settlementIndex * 160 + index * 48}ms`);
+      chip.style.setProperty("--chip-color", color);
+      dom.payoutLayer.appendChild(chip);
+    }
+
+    const label = document.createElement("span");
+    label.className = `payout-label ${settlement.type}`;
+    label.textContent = settlement.type === "push"
+      ? `${settlement.label} 退 ${formatMoney(settlement.amount)}`
+      : `${settlement.label} +${formatMoney(settlement.profit)}`;
+    label.style.setProperty("--from-x", `${sourcePoint.x}px`);
+    label.style.setProperty("--from-y", `${sourcePoint.y - 48}px`);
+    label.style.setProperty("--to-x", `${targetPoint.x - 12}px`);
+    label.style.setProperty("--to-y", `${targetPoint.y - 48}px`);
+    label.style.setProperty("--delay", `${settlementIndex * 160}ms`);
+    dom.payoutLayer.appendChild(label);
+  });
+
+  target.classList.add("payout-receive");
+  await wait(PAYOUT_ANIMATION_MS + outcome.settlements.length * 180);
+  target.classList.remove("payout-receive");
+  dom.payoutLayer.replaceChildren();
+}
+
+function getRectCenter(rect) {
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+function getPayoutColor(key, type) {
+  if (type === "push") return "#cbd5c3";
+  if (key === "player" || key === "panda") return "#1ea6ff";
+  if (key === "banker" || key === "dragon") return "#ff304b";
+  return "#f2d84a";
+}
+
+function getPayoutChipCount(amount) {
+  if (amount >= 2500) return 6;
+  if (amount >= 1000) return 5;
+  if (amount >= 300) return 4;
+  if (amount >= 100) return 3;
+  return 2;
+}
+
+function chipLabel(amount, chipCount, index) {
+  if (index === chipCount - 1) return formatMoney(amount);
+  if (amount >= 500) return "$100";
+  if (amount >= 100) return "$25";
+  return "";
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function buildSettlementBreakdown(outcome) {
+  if (!outcome.settlements.length) {
+    return `<div class="settlement-list"><span>没有命中派彩。</span></div>`;
+  }
+
+  const rows = outcome.settlements.map((settlement) => {
+    const detail = settlement.type === "push"
+      ? "Push 退本金"
+      : `${settlement.odds}:1 净赢 ${formatMoney(settlement.profit)}`;
+    return `
+      <span>
+        <b>${settlement.label}</b>
+        <em>${detail}</em>
+        <strong>${formatMoney(settlement.amount)}</strong>
+      </span>
+    `;
+  }).join("");
+
+  return `<div class="settlement-list">${rows}</div>`;
+}
+
+function formatSignedMoney(amount) {
+  if (amount > 0) return `+${formatMoney(amount)}`;
+  if (amount < 0) return `-${formatMoney(Math.abs(amount))}`;
+  return formatMoney(0);
 }
 
 function formatMoney(amount) {

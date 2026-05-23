@@ -108,6 +108,10 @@ h1 {
   font-size: 1.05rem;
 }
 
+.hud-card.payout-receive {
+  animation: payout-receive 780ms ease both;
+}
+
 .casino-grid {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(620px, 1.55fr) 310px;
@@ -737,6 +741,100 @@ button:disabled {
   color: var(--gold);
 }
 
+.settlement-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.settlement-list > span {
+  display: grid;
+  grid-template-columns: 0.9fr 1.25fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settlement-list b {
+  color: var(--ivory);
+}
+
+.settlement-list em {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-style: normal;
+}
+
+.settlement-list strong {
+  color: var(--gold);
+}
+
+.payout-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.payout-token,
+.payout-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(var(--from-x), var(--from-y));
+  animation-delay: var(--delay);
+  animation-fill-mode: both;
+}
+
+.payout-token {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 0.62rem;
+  font-weight: 900;
+  border: 4px dashed rgba(255, 255, 255, 0.46);
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.34), transparent 28%),
+    repeating-radial-gradient(circle, rgba(255, 255, 255, 0.18) 0 3px, transparent 3px 8px),
+    var(--chip-color);
+  box-shadow:
+    inset 0 0 0 6px rgba(0, 0, 0, 0.12),
+    0 15px 30px rgba(0, 0, 0, 0.35);
+  animation-name: payout-fly;
+  animation-duration: 980ms;
+  animation-timing-function: cubic-bezier(0.17, 0.84, 0.27, 1);
+}
+
+.payout-token.push {
+  color: #1a211c;
+  border-color: rgba(20, 29, 22, 0.28);
+}
+
+.payout-label {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(4, 12, 8, 0.86);
+  border: 1px solid rgba(243, 209, 111, 0.42);
+  color: var(--gold);
+  font-size: 0.82rem;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  animation-name: payout-label-fly;
+  animation-duration: 920ms;
+  animation-timing-function: ease-out;
+}
+
+.payout-label.push {
+  color: #dfe8da;
+}
+
 .rules {
   margin: 14px;
   color: var(--muted);
@@ -765,6 +863,61 @@ button:disabled {
     opacity: 1;
     transform: translate3d(0, 0, 0) rotate(0) scale(1);
     filter: blur(0);
+  }
+}
+
+@keyframes payout-fly {
+  0% {
+    opacity: 0;
+    transform: translate(var(--from-x), var(--from-y)) translate(-50%, -50%) scale(0.45) rotate(-20deg);
+  }
+
+  14% {
+    opacity: 1;
+  }
+
+  52% {
+    transform: translate(var(--mid-x), calc(var(--mid-y) + var(--arc))) translate(-50%, -50%) scale(1.08) rotate(115deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--to-x), var(--to-y)) translate(-50%, -50%) scale(0.72) rotate(260deg);
+  }
+}
+
+@keyframes payout-label-fly {
+  0% {
+    opacity: 0;
+    transform: translate(var(--from-x), var(--from-y)) translate(-50%, -50%) scale(0.84);
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  78% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--to-x), var(--to-y)) translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes payout-receive {
+  0%,
+  100% {
+    box-shadow: none;
+    transform: translateY(0);
+  }
+
+  45% {
+    box-shadow:
+      0 0 0 3px rgba(243, 209, 111, 0.22),
+      0 0 26px rgba(243, 209, 111, 0.36);
+    transform: translateY(-2px);
   }
 }
 
@@ -1032,11 +1185,29 @@ button:disabled {
     padding: 10px;
     font-size: 0.88rem;
   }
+
+  .settlement-list > span {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .payout-token {
+    width: 38px;
+    height: 38px;
+    font-size: 0.52rem;
+  }
+
+  .payout-label {
+    font-size: 0.72rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .card.new,
-  .card.slow {
+  .card.slow,
+  .payout-token,
+  .payout-label,
+  .hud-card.payout-receive {
     animation: none;
   }
 }
