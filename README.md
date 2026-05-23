@@ -12,5 +12,7 @@ Rules implemented:
 
 Rule references:
 
-- Parkwest Casino Lotus games page mentions EZ Baccarat with Panda 8 and Dragon 7.
-- Ocean Casino EZ Baccarat rules describe Dragon 7 paying 40:1 and Panda 8 paying 25:1.
+- Parkwest Casino Lotus EZ Baccarat page mentions Panda 8 and Dragon 7: https://parkwestcasinolotus.com/game/ez-baccarat/
+- Ocean Casino EZ Baccarat rules describe Dragon 7 paying 40:1 and Panda 8 paying 25:1: https://www.theoceanac.com/casino/table-games/how-to-play-ez-baccarat
+
+This project was built as an original static trainer instead of copying a third-party codebase.
