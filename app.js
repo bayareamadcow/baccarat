@@ -687,6 +687,12 @@ function buildBigRoadMark(placement) {
     mark.classList.add("natural");
     mark.appendChild(buildNaturalBadge(placement.outcome));
   }
+  if (placement.outcome.dragon) {
+    mark.appendChild(buildBonusBadge("dragon"));
+  }
+  if (placement.outcome.panda) {
+    mark.appendChild(buildBonusBadge("panda"));
+  }
 
   if (placement.ties > 0) {
     mark.classList.add("has-tie");
@@ -716,6 +722,14 @@ function buildNaturalBadge(outcome) {
   const badge = document.createElement("span");
   badge.className = "natural-badge";
   badge.textContent = `N${outcome.naturalTotal}`;
+  return badge;
+}
+
+function buildBonusBadge(type) {
+  const badge = document.createElement("span");
+  badge.className = `bonus-badge ${type}`;
+  badge.textContent = type === "dragon" ? "龍" : "熊";
+  badge.title = type === "dragon" ? "Dragon 7" : "Panda 8";
   return badge;
 }
 

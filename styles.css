@@ -285,6 +285,37 @@ h1 {
   bottom: -9px;
 }
 
+.bonus-badge {
+  position: absolute;
+  right: -10px;
+  bottom: -10px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 0.56rem;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 5px 12px rgba(0, 0, 0, 0.32);
+}
+
+.bonus-badge.dragon {
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.42), transparent 28%),
+    linear-gradient(135deg, #ff4f5f, #a40018);
+}
+
+.bonus-badge.panda {
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.42), transparent 28%),
+    linear-gradient(135deg, #44bdff, #075eb8);
+}
+
 .mark.dragon,
 .mark.panda {
   outline: 2px solid var(--gold);
