@@ -54,6 +54,7 @@ const dom = {
   bankroll: document.querySelector("#bankroll"),
   roundNumber: document.querySelector("#round-number"),
   shoeNumber: document.querySelector("#shoe-number"),
+  reloadCount: document.querySelector("#reload-count"),
   shoeCount: document.querySelector("#shoe-count"),
   playerCards: document.querySelector("#player-cards"),
   bankerCards: document.querySelector("#banker-cards"),
@@ -62,6 +63,7 @@ const dom = {
   status: document.querySelector("#status"),
   dealButton: document.querySelector("#deal-btn"),
   clearButton: document.querySelector("#clear-btn"),
+  reloadButton: document.querySelector("#reload-btn"),
   newShoeButton: document.querySelector("#new-shoe-btn"),
   chipRack: document.querySelector("#chip-rack"),
   bigRoad: document.querySelector("#big-road"),
@@ -87,6 +89,7 @@ const dom = {
 
 const state = {
   bankroll: STARTING_BANKROLL,
+  reloadCount: 0,
   roundNumber: 0,
   shoeNumber: 0,
   selectedChip: 25,
@@ -119,6 +122,7 @@ function bindEvents() {
   });
 
   dom.clearButton.addEventListener("click", clearBets);
+  dom.reloadButton.addEventListener("click", reloadChips);
   dom.dealButton.addEventListener("click", dealRound);
   dom.newShoeButton.addEventListener("click", () => {
     newShoe("手动换了一个新 shoe。");
@@ -194,6 +198,15 @@ function clearBets() {
   if (state.phase !== "betting") return;
   state.bets = createEmptyBets();
   state.message = "下注已清空。";
+  render();
+}
+
+function reloadChips() {
+  if (state.phase !== "betting") return;
+  state.bankroll = STARTING_BANKROLL;
+  state.reloadCount += 1;
+  state.bets = createEmptyBets();
+  state.message = `Reload 筹码第 ${state.reloadCount} 次，余额回到 ${formatMoney(STARTING_BANKROLL)}。`;
   render();
 }
 
@@ -407,12 +420,14 @@ function render() {
   dom.bankroll.textContent = formatMoney(state.bankroll);
   dom.roundNumber.textContent = String(state.roundNumber);
   dom.shoeNumber.textContent = String(state.shoeNumber);
+  dom.reloadCount.textContent = String(state.reloadCount);
   dom.shoeCount.textContent = `${state.shoe.length} cards`;
   dom.playerTotal.textContent = state.player.length ? handTotal(state.player) : "--";
   dom.bankerTotal.textContent = state.banker.length ? handTotal(state.banker) : "--";
   dom.status.textContent = state.message;
   dom.dealButton.disabled = state.phase !== "betting";
   dom.clearButton.disabled = state.phase !== "betting";
+  dom.reloadButton.disabled = state.phase !== "betting";
   dom.newShoeButton.disabled = state.phase !== "betting";
   renderCards(dom.playerCards, state.player);
   renderCards(dom.bankerCards, state.banker);

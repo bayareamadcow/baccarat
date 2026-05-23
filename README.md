@@ -10,6 +10,7 @@ Rules implemented:
 - Panda 8 pays 25:1 when Player wins with a three-card 8.
 - Third-card draw sequence is animated and dealt Player first, then Banker when required.
 - Winning and pushed bets animate chips from the winning bet boxes back to the bankroll, with per-bet payout breakdowns.
+- Reload Chips resets the practice bankroll to $5,000, clears unplayed bets, and tracks the reload count.
 - Scoreboard includes Bead Plate, Big Road, Big Eye Boy, Small Road, Cockroach Pig, and a Banker/Player forecast preview for derived-road marks.
 
 Rule references:
