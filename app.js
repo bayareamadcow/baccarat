@@ -716,7 +716,6 @@ function buildBigRoadMark(placement) {
   const mark = buildOutcomeMark(placement.outcome, "big");
   if (placement.outcome.natural) {
     mark.classList.add("natural");
-    mark.appendChild(buildNaturalBadge(placement.outcome));
   }
   if (placement.outcome.dragon) {
     mark.appendChild(buildBonusBadge("dragon"));
@@ -752,7 +751,7 @@ function buildBigRoadMark(placement) {
 function buildNaturalBadge(outcome) {
   const badge = document.createElement("span");
   badge.className = "natural-badge";
-  badge.textContent = `N${outcome.naturalTotal}`;
+  badge.textContent = outcome.naturalTotal;
   return badge;
 }
 
@@ -767,7 +766,7 @@ function buildBonusBadge(type) {
 function buildOutcomeMark(outcome, mode = "bead") {
   const mark = document.createElement("span");
   mark.className = `mark ${mode} ${outcome.winner}${outcome.dragon ? " dragon" : ""}${outcome.panda ? " panda" : ""}`;
-  mark.textContent = mode === "big" ? "" : outcome.winner === "banker" ? outcome.bankerTotal : outcome.winner === "player" ? outcome.playerTotal : "和";
+  mark.textContent = mode === "big" && outcome.natural ? outcome.naturalTotal : mode === "big" ? "" : outcome.winner === "banker" ? outcome.bankerTotal : outcome.winner === "player" ? outcome.playerTotal : "和";
   mark.title = buildOutcomeMessage(outcome);
   return mark;
 }
