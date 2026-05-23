@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parkwest 风格 Baccarat 练习台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">EZ Baccarat Trainer</p>
+        <h1>Parkwest 风格百家乐</h1>
+        <p class="hero-copy">庄 / 闲 / 和，Dragon 7 40 倍，Panda 8 25 倍。发牌和补牌都有动画，补牌顺序先闲后庄。</p>
+      </div>
+      <div class="hud">
+        <div class="hud-card"><span>余额</span><strong id="bankroll">$5,000</strong></div>
+        <div class="hud-card"><span>局数</span><strong id="round-number">0</strong></div>
+        <div class="hud-card"><span>Shoe</span><strong id="shoe-number">1</strong></div>
+        <button id="new-shoe-btn" type="button">新 Shoe</button>
+      </div>
+    </header>
+
+    <main class="casino-grid">
+      <section class="road-panel">
+        <div class="panel-title">
+          <span>大路</span>
+          <strong id="table-code">Table 8-18</strong>
+        </div>
+        <div id="big-road" class="road-grid" aria-label="Big road"></div>
+        <div class="mini-roads">
+          <div>
+            <p>珠盘路</p>
+            <div id="bead-road" class="mini-road"></div>
+          </div>
+          <div>
+            <p>结果统计</p>
+            <div id="stats-list" class="stats-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="table-panel">
+        <div class="felt">
+          <div class="hand-zone player-zone">
+            <div class="hand-heading">
+              <span>闲 Player</span>
+              <strong id="player-total">--</strong>
+            </div>
+            <div id="player-cards" class="card-row"></div>
+          </div>
+
+          <div class="shoe-tower">
+            <div class="shoe-card">Yang's<br> Baccarat</div>
+            <div id="shoe-count" class="shoe-count">416 cards</div>
+          </div>
+
+          <div class="hand-zone banker-zone">
+            <div class="hand-heading">
+              <span>庄 Banker</span>
+              <strong id="banker-total">--</strong>
+            </div>
+            <div id="banker-cards" class="card-row"></div>
+          </div>
+
+          <div id="status" class="status">选择下注后发牌。</div>
+
+          <div class="bet-board" aria-label="Betting board">
+            <button class="bet-box player" data-bet-target="player" type="button">
+              <span>闲</span><strong>1 : 1</strong><em id="bet-player">$0</em>
+            </button>
+            <button class="bet-box panda" data-bet-target="panda" type="button">
+              <span>Panda 8</span><strong>25 : 1</strong><em id="bet-panda">$0</em>
+            </button>
+            <button class="bet-box tie" data-bet-target="tie" type="button">
+              <span>和</span><strong>8 : 1</strong><em id="bet-tie">$0</em>
+            </button>
+            <button class="bet-box dragon" data-bet-target="dragon" type="button">
+              <span>Dragon 7</span><strong>40 : 1</strong><em id="bet-dragon">$0</em>
+            </button>
+            <button class="bet-box banker" data-bet-target="banker" type="button">
+              <span>庄</span><strong>1 : 1</strong><em id="bet-banker">$0</em>
+            </button>
+          </div>
+        </div>
+
+        <div class="control-strip">
+          <div class="chips" id="chip-rack" aria-label="Chip rack">
+            <button data-chip="25" type="button">$25</button>
+            <button data-chip="50" type="button">$50</button>
+            <button data-chip="100" type="button">$100</button>
+            <button data-chip="200" type="button">$200</button>
+            <button data-chip="500" type="button">$500</button>
+          </div>
+          <button id="clear-btn" class="ghost" type="button">清下注</button>
+          <button id="deal-btn" class="deal" type="button">发牌</button>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <div class="panel-title">
+          <span>开牌结果</span>
+          <strong id="last-result">--</strong>
+        </div>
+        <div id="result-card" class="result-card">
+          等待下一局。
+        </div>
+        <div class="rules">
+          <h2>规则</h2>
+          <p>8 副牌；A 算 1，10/J/Q/K 算 0，总点数只取个位。</p>
+          <p>Natural 8 / 9 不补牌。若需要补牌，先补闲，再按庄家补牌表补庄。</p>
+          <p>Dragon 7：庄三张 7 点赢，Dragon 赔 40:1，庄主注 Push。Panda 8：闲三张 8 点赢，Panda 赔 25:1。Tie 赔 8:1。</p>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
