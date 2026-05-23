@@ -4,6 +4,7 @@ const STARTING_BANKROLL = 5000;
 const CUT_CARD_REMAINING = 18;
 const DEAL_MS = 300;
 const THIRD_CARD_PAUSE_MS = 720;
+const RESULT_SPLASH_MS = 1280;
 const PAYOUT_ANIMATION_MS = 1050;
 const ROAD_ROWS = 6;
 const BIG_ROAD_MIN_COLUMNS = 18;
@@ -260,6 +261,7 @@ async function dealRound() {
   const outcome = settleRound();
   state.phase = "settled";
   render();
+  await animateResultSplash(outcome);
   await animatePayout(outcome);
   state.phase = "betting";
   state.bets = createEmptyBets();
@@ -882,6 +884,74 @@ async function animatePayout(outcome) {
   await wait(PAYOUT_ANIMATION_MS + outcome.settlements.length * 180);
   target.classList.remove("payout-receive");
   dom.payoutLayer.replaceChildren();
+}
+
+async function animateResultSplash(outcome) {
+  if (!dom.payoutLayer || prefersReducedMotion()) {
+    return;
+  }
+
+  dom.payoutLayer.replaceChildren();
+  const type = getResultSplashType(outcome);
+  const splash = document.createElement("div");
+  splash.className = `result-splash ${type}`;
+  splash.setAttribute("role", "status");
+  splash.setAttribute("aria-label", getResultSplashLabel(outcome, type));
+  splash.innerHTML = buildResultSplashMarkup(outcome, type);
+  dom.payoutLayer.appendChild(splash);
+
+  await wait(RESULT_SPLASH_MS);
+  splash.remove();
+}
+
+function getResultSplashType(outcome) {
+  if (outcome.dragon) return "dragon";
+  if (outcome.panda) return "panda";
+  return outcome.winner;
+}
+
+function getResultSplashLabel(outcome, type) {
+  if (type === "dragon") return "Dragon 7 bonus hit";
+  if (type === "panda") return "Panda 8 bonus hit";
+  return `${LABELS[outcome.winner]} wins ${outcome.playerTotal} to ${outcome.bankerTotal}`;
+}
+
+function buildResultSplashMarkup(outcome, type) {
+  if (type === "dragon") {
+    return `
+      <div class="result-aura"></div>
+      <div class="dragon-scene" aria-hidden="true">
+        <span class="dragon-trail"></span>
+        <span class="dragon-mark">龍</span>
+        <span class="dragon-flame"></span>
+      </div>
+      <strong>Dragon 7</strong>
+      <em>Banker three-card 7</em>
+    `;
+  }
+
+  if (type === "panda") {
+    return `
+      <div class="result-aura"></div>
+      <div class="panda-scene" aria-hidden="true">
+        <span class="bamboo bamboo-left"></span>
+        <span class="panda-face">熊</span>
+        <span class="bamboo bamboo-right"></span>
+      </div>
+      <strong>Panda 8</strong>
+      <em>Player three-card 8</em>
+    `;
+  }
+
+  const winnerLabel = type === "banker" ? "庄" : type === "player" ? "闲" : "和";
+  const resultText = type === "tie" ? "Tie" : `${type === "banker" ? "Banker" : "Player"} wins`;
+
+  return `
+    <div class="result-aura"></div>
+    <div class="winner-symbol" aria-hidden="true">${winnerLabel}</div>
+    <strong>${winnerLabel}</strong>
+    <em>${resultText} ${outcome.playerTotal} - ${outcome.bankerTotal}</em>
+  `;
 }
 
 function getRectCenter(rect) {
