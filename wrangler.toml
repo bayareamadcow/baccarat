@@ -1,0 +1,12 @@
+name = "mad-cow-baccarat"
+main = "worker/src/index.js"
+compatibility_date = "2026-05-23"
+
+[durable_objects]
+bindings = [
+  { name = "BACCARAT_TABLE", class_name = "BaccaratTable" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BaccaratTable"]

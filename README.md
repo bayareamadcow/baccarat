@@ -2,6 +2,12 @@
 
 A static EZ Baccarat practice table with Player, Banker, Tie, Dragon 7, and Panda 8 bets.
 
+Online table:
+
+- The public page connects to `https://mad-cow-baccarat.0413zhouyang.workers.dev` by default.
+- The Cloudflare Worker keeps the shared room, 20-second betting timer, automatic shoes, no-bet free hands, player balances, and Top 10 leaderboard in a Durable Object.
+- Use `?room=your-room-name` to create a separate table for friends.
+
 Rules implemented:
 
 - 8-deck baccarat shoe.

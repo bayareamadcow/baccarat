@@ -815,6 +815,14 @@ h1 {
   font-weight: 900;
 }
 
+.free-action {
+  color: #b8d8ff !important;
+  border-color: rgba(30, 166, 255, 0.3) !important;
+  background:
+    linear-gradient(135deg, rgba(30, 166, 255, 0.13), rgba(255, 255, 255, 0.05)) !important;
+  font-weight: 900;
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -879,6 +887,57 @@ button:disabled {
 .player-name-field input:focus {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(243, 209, 111, 0.14);
+}
+
+.online-connector {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin: 12px 0;
+}
+
+.online-connector label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.online-connector input {
+  width: 100%;
+  border: 1px solid rgba(243, 209, 111, 0.26);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--ivory);
+  padding: 9px 10px;
+  font: inherit;
+  outline: none;
+}
+
+.online-connector button {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(243, 209, 111, 0.32);
+  background: rgba(243, 209, 111, 0.12);
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.online-connector span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.online-connector span.online {
+  color: var(--green);
+}
+
+.online-connector span.offline {
+  color: #ff7786;
 }
 
 .tournament-metrics {
@@ -1838,14 +1897,32 @@ button:disabled {
   }
 
   .bet-board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-areas:
+      "panda tie tie tie tie dragon"
+      "player player player banker banker banker";
     gap: 7px;
   }
 
+  .bet-box.player { grid-area: player; }
+  .bet-box.banker { grid-area: banker; }
+  .bet-box.tie { grid-area: tie; }
+  .bet-box.panda { grid-area: panda; }
+  .bet-box.dragon { grid-area: dragon; }
+
   .bet-box {
-    min-height: 62px;
+    min-height: 64px;
     border-radius: 12px;
     padding: 7px;
+  }
+
+  .bet-box.player,
+  .bet-box.banker {
+    min-height: 76px;
+  }
+
+  .bet-box.tie {
+    min-height: 70px;
   }
 
   .bet-box span {
@@ -1886,6 +1963,10 @@ button:disabled {
 
   .control-strip .repeat {
     flex: 1 1 116px;
+  }
+
+  .control-strip .free-action {
+    flex: 1 1 118px;
   }
 
   .deal {
@@ -1937,6 +2018,10 @@ button:disabled {
   .tournament-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  .online-connector {
+    grid-template-columns: 1fr;
   }
 
   .leaderboard-row {

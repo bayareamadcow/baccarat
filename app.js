@@ -12,6 +12,10 @@ const DERIVED_ROAD_MIN_COLUMNS = 12;
 const BET_KEYS = ["player", "panda", "tie", "dragon", "banker"];
 const CHIPS = [25, 50, 100, 200, 500];
 const LEADERBOARD_SIZE = 10;
+const ONLINE_POLL_MS = 1000;
+const DEFAULT_SERVER_URL = "https://mad-cow-baccarat.0413zhouyang.workers.dev";
+const SERVER_URL_STORAGE_KEY = "madCowBaccaratServerUrl";
+const PLAYER_ID_STORAGE_KEY = "madCowBaccaratPlayerId";
 
 const SUITS = [
   { code: "H", symbol: "♥", red: true },
@@ -66,6 +70,8 @@ const dom = {
   dealButton: document.querySelector("#deal-btn"),
   clearButton: document.querySelector("#clear-btn"),
   repeatButton: document.querySelector("#repeat-btn"),
+  freeHandButton: document.querySelector("#free-hand-btn"),
+  freeFiveButton: document.querySelector("#free-five-btn"),
   reloadButton: document.querySelector("#reload-btn"),
   newShoeButton: document.querySelector("#new-shoe-btn"),
   chipRack: document.querySelector("#chip-rack"),
@@ -80,6 +86,9 @@ const dom = {
   resultCard: document.querySelector("#result-card"),
   payoutLayer: document.querySelector("#payout-layer"),
   playerNameInput: document.querySelector("#player-name"),
+  serverUrlInput: document.querySelector("#server-url"),
+  connectButton: document.querySelector("#connect-btn"),
+  onlineStatus: document.querySelector("#online-status"),
   tournamentStatus: document.querySelector("#tournament-status"),
   tournamentScore: document.querySelector("#tournament-score"),
   tournamentHands: document.querySelector("#tournament-hands"),
@@ -118,12 +127,26 @@ const state = {
   history: [],
   message: "选择下注后发牌。",
   lastOutcome: null,
+  online: {
+    enabled: false,
+    serverUrl: getSavedServerUrl(),
+    playerId: getOrCreatePlayerId(),
+    pollTimer: null,
+    snapshot: null,
+    leaderboard: null,
+    secondsRemaining: 0,
+    error: "",
+  },
 };
 
 function init() {
   bindEvents();
+  dom.serverUrlInput.value = state.online.serverUrl;
   newShoe("新 shoe 已洗好。");
   render();
+  if (state.online.serverUrl) {
+    connectOnline({ silent: true });
+  }
 }
 
 function bindEvents() {
@@ -141,11 +164,22 @@ function bindEvents() {
   dom.playerNameInput.addEventListener("input", () => {
     state.playerName = normalizePlayerName(dom.playerNameInput.value);
     savePlayerName(state.playerName);
+    syncOnlinePlayerName();
     renderTournament();
+  });
+
+  dom.connectButton.addEventListener("click", () => {
+    if (state.online.enabled) {
+      disconnectOnline();
+    } else {
+      connectOnline();
+    }
   });
 
   dom.clearButton.addEventListener("click", clearBets);
   dom.repeatButton.addEventListener("click", repeatLastBet);
+  dom.freeHandButton.addEventListener("click", () => freeHands(1));
+  dom.freeFiveButton.addEventListener("click", () => freeHands(5));
   dom.reloadButton.addEventListener("click", reloadChips);
   dom.dealButton.addEventListener("click", dealRound);
   dom.newShoeButton.addEventListener("click", () => {
@@ -206,7 +240,12 @@ function shuffle(cards) {
   return clone;
 }
 
-function addBet(target) {
+async function addBet(target) {
+  if (state.online.enabled) {
+    await onlineAction("bet", { key: target, amount: state.selectedChip });
+    return;
+  }
+
   if (state.phase !== "betting") return;
   if (getTotalBet() + state.selectedChip > state.bankroll) {
     state.message = "余额不够覆盖下注。";
@@ -218,14 +257,24 @@ function addBet(target) {
   render();
 }
 
-function clearBets() {
+async function clearBets() {
+  if (state.online.enabled) {
+    await onlineAction("clear");
+    return;
+  }
+
   if (state.phase !== "betting") return;
   state.bets = createEmptyBets();
   state.message = "下注已清空。";
   render();
 }
 
-function repeatLastBet() {
+async function repeatLastBet() {
+  if (state.online.enabled) {
+    await onlineAction("repeat");
+    return;
+  }
+
   if (state.phase !== "betting") return;
   if (!state.lastBets || getBetsTotal(state.lastBets) <= 0) {
     state.message = "还没有上一局下注可以重复。";
@@ -245,7 +294,12 @@ function repeatLastBet() {
   render();
 }
 
-function reloadChips() {
+async function reloadChips() {
+  if (state.online.enabled) {
+    await onlineAction("reload");
+    return;
+  }
+
   if (state.phase !== "betting") return;
   state.bankroll = STARTING_BANKROLL;
   state.reloadCount += 1;
@@ -254,7 +308,43 @@ function reloadChips() {
   render();
 }
 
+async function freeHands(count) {
+  if (state.online.enabled) {
+    await onlineAction("free", { count });
+    return;
+  }
+
+  if (state.phase !== "betting") return;
+  const safeCount = Math.max(1, Math.min(5, Number(count) || 1));
+  state.phase = "dealing";
+  state.bets = createEmptyBets();
+  state.message = safeCount === 1
+    ? "Free hand running with no bet."
+    : `Free ${safeCount} hands running with no bet.`;
+  render();
+  await wait(140);
+
+  let lastOutcome = null;
+  for (let index = 0; index < safeCount; index += 1) {
+    if (state.shoe.length <= CUT_CARD_REMAINING) {
+      state.shoe = shuffle(createShoe());
+      state.shoeNumber += 1;
+    }
+    state.roundNumber += 1;
+    dealFreeHandCards();
+    lastOutcome = settleRound({ trackStats: false });
+  }
+
+  state.phase = "betting";
+  state.bets = createEmptyBets();
+  state.message = safeCount === 1
+    ? `Free hand complete. ${buildOutcomeMessage(lastOutcome)}`
+    : `Free ${safeCount} hands complete. Last: ${buildOutcomeMessage(lastOutcome)}`;
+  render();
+}
+
 async function dealRound() {
+  if (state.online.enabled) return;
   if (state.phase !== "betting") return;
   const totalBet = getTotalBet();
   if (totalBet <= 0) {
@@ -291,6 +381,191 @@ async function dealRound() {
   state.phase = "betting";
   state.bets = createEmptyBets();
   render();
+}
+
+async function connectOnline({ silent = false } = {}) {
+  const serverUrl = normalizeServerUrl(dom.serverUrlInput.value || state.online.serverUrl);
+  if (!serverUrl) {
+    state.online.error = "Paste Worker URL first";
+    if (!silent) state.message = "先填 Cloudflare Worker URL，再连接在线桌台。";
+    render();
+    return;
+  }
+
+  state.online.serverUrl = serverUrl;
+  state.online.enabled = true;
+  state.online.error = "";
+  saveServerUrl(serverUrl);
+  dom.serverUrlInput.value = serverUrl;
+  state.message = "正在连接在线桌台...";
+  render();
+
+  try {
+    await refreshOnlineState();
+    startOnlinePolling();
+  } catch (error) {
+    state.online.error = error.message;
+    if (silent) {
+      state.online.enabled = false;
+      state.message = "在线桌台暂时连不上，已保留本地练习模式。";
+    } else {
+      state.message = `在线桌台连接失败：${error.message}`;
+    }
+    render();
+  }
+}
+
+function disconnectOnline() {
+  stopOnlinePolling();
+  state.online.enabled = false;
+  state.online.snapshot = null;
+  state.online.leaderboard = null;
+  state.online.error = "";
+  newShoe("已回到本地练习模式。");
+  render();
+}
+
+function startOnlinePolling() {
+  stopOnlinePolling();
+  state.online.pollTimer = window.setInterval(() => {
+    refreshOnlineState();
+  }, ONLINE_POLL_MS);
+}
+
+function stopOnlinePolling() {
+  if (state.online.pollTimer) {
+    window.clearInterval(state.online.pollTimer);
+    state.online.pollTimer = null;
+  }
+}
+
+async function refreshOnlineState() {
+  if (!state.online.enabled || !state.online.serverUrl) return;
+  const snapshot = await onlineFetch("state", "GET");
+  applyOnlineSnapshot(snapshot);
+  state.online.error = "";
+  render();
+}
+
+async function onlineAction(action, payload = {}) {
+  if (!state.online.enabled) return;
+  try {
+    const snapshot = await onlineFetch(action, "POST", payload);
+    applyOnlineSnapshot(snapshot);
+    state.online.error = "";
+  } catch (error) {
+    state.online.error = error.message;
+    state.message = error.message;
+  }
+  render();
+}
+
+async function syncOnlinePlayerName() {
+  if (!state.online.enabled) return;
+  try {
+    const snapshot = await onlineFetch("player", "POST", {});
+    applyOnlineSnapshot(snapshot);
+  } catch (error) {
+    state.online.error = error.message;
+  }
+  render();
+}
+
+async function onlineFetch(action, method = "GET", payload = {}) {
+  const url = new URL(`${state.online.serverUrl}/api/${action}`);
+  url.searchParams.set("room", getRoomId());
+  url.searchParams.set("playerId", state.online.playerId);
+  url.searchParams.set("name", state.playerName);
+  const options = method === "GET"
+    ? { method }
+    : {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        playerId: state.online.playerId,
+        name: state.playerName,
+      }),
+    };
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error || `Server error ${response.status}`);
+  }
+  return data;
+}
+
+function applyOnlineSnapshot(snapshot) {
+  const player = snapshot.player;
+  state.online.snapshot = snapshot;
+  state.online.leaderboard = snapshot.leaderboard || [];
+  state.online.secondsRemaining = snapshot.secondsRemaining || 0;
+  state.playerName = player.name;
+  savePlayerName(state.playerName);
+  if (document.activeElement !== dom.playerNameInput) {
+    dom.playerNameInput.value = state.playerName;
+  }
+
+  state.bankroll = player.bankroll;
+  state.reloadCount = player.reloadCount;
+  state.handsPlayed = player.handsPlayed;
+  state.totalWagered = player.totalWagered;
+  state.lastHandNet = player.lastHandNet;
+  state.bestHandNet = player.bestHandNet;
+  state.bonusHits = player.bonusHits;
+  state.bets = normalizeBets(player.bets);
+  state.lastBets = normalizeBets(player.lastBets);
+  state.roundNumber = snapshot.roundNumber;
+  state.shoeNumber = snapshot.shoeNumber;
+  state.phase = snapshot.phase;
+  state.shoe = Array.from({ length: snapshot.cardsRemaining || 0 }, (_, index) => ({ id: `online-${index}` }));
+  state.player = (snapshot.playerCards || []).map(hydrateOnlineCard);
+  state.banker = (snapshot.bankerCards || []).map(hydrateOnlineCard);
+  state.history = snapshot.history || [];
+  state.lastOutcome = snapshot.lastOutcome;
+  state.message = snapshot.message;
+}
+
+function normalizeBets(bets) {
+  return BET_KEYS.reduce((normalized, key) => {
+    normalized[key] = Number(bets?.[key] || 0);
+    return normalized;
+  }, {});
+}
+
+function hydrateOnlineCard(card) {
+  return {
+    ...card,
+    fresh: false,
+    slow: false,
+  };
+}
+
+function dealFreeHandCards() {
+  state.player = [drawCard(), drawCard()];
+  state.banker = [drawCard(), drawCard()];
+  const playerStart = handTotal(state.player);
+  const bankerStart = handTotal(state.banker);
+  if (playerStart >= 8 || bankerStart >= 8) return;
+
+  let playerThirdValue = null;
+  if (playerStart <= 5) {
+    const playerThird = drawCard();
+    state.player.push(playerThird);
+    playerThirdValue = playerThird.value;
+  }
+
+  if (bankerShouldDraw(handTotal(state.banker), playerThirdValue)) {
+    state.banker.push(drawCard());
+  }
+}
+
+function getRoomId() {
+  return new URLSearchParams(window.location.search).get("room") || "mad-cow-580";
+}
+
+function normalizeServerUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
 }
 
 async function dealTo(side, message, slow = false) {
@@ -356,7 +631,7 @@ function bankerShouldDraw(total, playerThirdValue) {
   return false;
 }
 
-function settleRound() {
+function settleRound({ trackStats = true } = {}) {
   const playerTotal = handTotal(state.player);
   const bankerTotal = handTotal(state.banker);
   const winner = playerTotal > bankerTotal ? "player" : bankerTotal > playerTotal ? "banker" : "tie";
@@ -401,7 +676,10 @@ function settleRound() {
     playerCards: [...state.player],
     bankerCards: [...state.banker],
   };
-  updateTournamentStats(outcome, getTotalBet());
+  const wagered = getTotalBet();
+  if (trackStats || wagered > 0) {
+    updateTournamentStats(outcome, wagered);
+  }
   state.history.unshift(outcome);
   state.history = state.history.slice(0, 72);
   state.lastOutcome = outcome;
@@ -502,20 +780,41 @@ function render() {
   dom.playerTotal.textContent = state.player.length ? handTotal(state.player) : "--";
   dom.bankerTotal.textContent = state.banker.length ? handTotal(state.banker) : "--";
   dom.status.textContent = state.message;
-  dom.dealButton.disabled = state.phase !== "betting";
+  dom.dealButton.disabled = state.online.enabled || state.phase !== "betting";
+  dom.dealButton.textContent = state.online.enabled
+    ? getOnlineDealButtonText()
+    : "发牌";
   dom.clearButton.disabled = state.phase !== "betting";
   dom.repeatButton.disabled = state.phase !== "betting"
     || !state.lastBets
     || getBetsTotal(state.lastBets) <= 0
     || getBetsTotal(state.lastBets) > state.bankroll;
+  dom.freeHandButton.disabled = state.phase !== "betting";
+  dom.freeFiveButton.disabled = state.phase !== "betting";
   dom.reloadButton.disabled = state.phase !== "betting";
-  dom.newShoeButton.disabled = state.phase !== "betting";
+  dom.newShoeButton.disabled = state.online.enabled || state.phase !== "betting";
+  dom.connectButton.textContent = state.online.enabled ? "Disconnect" : "Connect";
+  dom.onlineStatus.textContent = getOnlineStatusText();
+  dom.onlineStatus.classList.toggle("online", state.online.enabled && !state.online.error);
+  dom.onlineStatus.classList.toggle("offline", Boolean(state.online.error));
   renderCards(dom.playerCards, state.player);
   renderCards(dom.bankerCards, state.banker);
   renderBets();
   renderRoads();
   renderLastResult();
   renderTournament();
+}
+
+function getOnlineDealButtonText() {
+  if (!state.online.enabled) return "发牌";
+  if (state.phase === "betting") return `买定离手 ${state.online.secondsRemaining}s`;
+  return `开牌中 ${state.online.secondsRemaining}s`;
+}
+
+function getOnlineStatusText() {
+  if (state.online.error) return `Offline: ${state.online.error}`;
+  if (state.online.enabled) return "Online table";
+  return "Local mode";
 }
 
 function renderCards(host, cards) {
@@ -1051,7 +1350,9 @@ function buildSettlementBreakdown(outcome) {
 function renderTournament() {
   const score = getTournamentScore();
   const room = new URLSearchParams(window.location.search).get("room");
-  dom.tournamentStatus.textContent = room ? `Room ${room}` : "Local Table";
+  dom.tournamentStatus.textContent = state.online.enabled
+    ? `Room ${room || "mad-cow-580"}`
+    : "Local Table";
   dom.tournamentScore.textContent = formatSignedMoney(score);
   dom.tournamentScore.classList.toggle("positive", score > 0);
   dom.tournamentScore.classList.toggle("negative", score < 0);
@@ -1072,6 +1373,26 @@ function renderLeaderboardRows() {
 }
 
 function getLeaderboardRows() {
+  if (state.online.enabled && state.online.leaderboard) {
+    const rows = state.online.leaderboard.map((row) => ({
+      ...row,
+      self: row.id === state.online.playerId,
+    }));
+    for (let seat = rows.length + 1; seat <= LEADERBOARD_SIZE; seat += 1) {
+      rows.push({
+        rank: seat,
+        name: `Open Seat ${seat}`,
+        score: null,
+        bankroll: null,
+        reloads: null,
+        hands: null,
+        bonus: null,
+        waiting: true,
+      });
+    }
+    return rows;
+  }
+
   const rows = [
     {
       rank: 1,
@@ -1125,8 +1446,8 @@ function buildLeaderboardRow(row) {
   name.textContent = row.name;
   const meta = document.createElement("em");
   meta.textContent = row.waiting
-    ? "Supabase 连接后自动同步"
-    : `${formatMoney(row.bankroll)} · Reload ${row.reloads} · ${row.hands} 手 · Bonus ${row.bonus}`;
+    ? "Waiting for online player"
+    : `${formatMoney(row.bankroll)} · Reload ${row.reloads} · ${row.hands} hands · Bonus ${row.bonus}`;
   main.append(name, meta);
 
   const score = document.createElement("b");
@@ -1171,6 +1492,36 @@ function savePlayerName(name) {
     localStorage.setItem("baccaratPlayerName", name);
   } catch {
     // Local storage can be unavailable in strict browser modes.
+  }
+}
+
+function getSavedServerUrl() {
+  const fromUrl = new URLSearchParams(window.location.search).get("server");
+  if (fromUrl) return normalizeServerUrl(fromUrl);
+  try {
+    return normalizeServerUrl(localStorage.getItem(SERVER_URL_STORAGE_KEY) || DEFAULT_SERVER_URL);
+  } catch {
+    return DEFAULT_SERVER_URL;
+  }
+}
+
+function saveServerUrl(url) {
+  try {
+    localStorage.setItem(SERVER_URL_STORAGE_KEY, url);
+  } catch {
+    // Local storage can be unavailable in strict browser modes.
+  }
+}
+
+function getOrCreatePlayerId() {
+  try {
+    const saved = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+    if (saved) return saved;
+    const created = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(PLAYER_ID_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 }
 

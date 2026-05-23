@@ -124,6 +124,8 @@
           </div>
           <button id="clear-btn" class="ghost" type="button">清下注</button>
           <button id="repeat-btn" class="ghost repeat" type="button">Repeat Bet</button>
+          <button id="free-hand-btn" class="ghost free-action" type="button">Free Hand</button>
+          <button id="free-five-btn" class="ghost free-action" type="button">Free 5 Hands</button>
           <button id="deal-btn" class="deal" type="button">发牌</button>
         </div>
       </section>
@@ -138,6 +140,14 @@
             玩家名
             <input id="player-name" maxlength="16" autocomplete="off" value="Yang">
           </label>
+          <div class="online-connector">
+            <label for="server-url">
+              Online Server
+              <input id="server-url" autocomplete="off" placeholder="Cloudflare Worker URL">
+            </label>
+            <button id="connect-btn" type="button">Connect</button>
+            <span id="online-status">Local mode</span>
+          </div>
           <div class="tournament-metrics">
             <div><span>Score</span><strong id="tournament-score">$0</strong></div>
             <div><span>Hands</span><strong id="tournament-hands">0</strong></div>
