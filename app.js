@@ -135,6 +135,8 @@ const state = {
     snapshot: null,
     leaderboard: null,
     secondsRemaining: 0,
+    lastAnimatedRound: null,
+    revealInProgress: false,
     error: "",
   },
 };
@@ -441,8 +443,9 @@ function stopOnlinePolling() {
 
 async function refreshOnlineState() {
   if (!state.online.enabled || !state.online.serverUrl) return;
+  if (state.online.revealInProgress) return;
   const snapshot = await onlineFetch("state", "GET");
-  applyOnlineSnapshot(snapshot);
+  await applyOnlineSnapshot(snapshot);
   state.online.error = "";
   render();
 }
@@ -451,7 +454,7 @@ async function onlineAction(action, payload = {}) {
   if (!state.online.enabled) return;
   try {
     const snapshot = await onlineFetch(action, "POST", payload);
-    applyOnlineSnapshot(snapshot);
+    await applyOnlineSnapshot(snapshot);
     state.online.error = "";
   } catch (error) {
     state.online.error = error.message;
@@ -464,7 +467,7 @@ async function syncOnlinePlayerName() {
   if (!state.online.enabled) return;
   try {
     const snapshot = await onlineFetch("player", "POST", {});
-    applyOnlineSnapshot(snapshot);
+    await applyOnlineSnapshot(snapshot, { animate: false });
   } catch (error) {
     state.online.error = error.message;
   }
@@ -495,7 +498,16 @@ async function onlineFetch(action, method = "GET", payload = {}) {
   return data;
 }
 
-function applyOnlineSnapshot(snapshot) {
+async function applyOnlineSnapshot(snapshot, { animate = true } = {}) {
+  if (animate && shouldAnimateOnlineReveal(snapshot)) {
+    await animateOnlineReveal(snapshot);
+    return;
+  }
+
+  applyOnlineSnapshotCore(snapshot);
+}
+
+function applyOnlineSnapshotCore(snapshot, overrides = {}) {
   const player = snapshot.player;
   state.online.snapshot = snapshot;
   state.online.leaderboard = snapshot.leaderboard || [];
@@ -519,11 +531,80 @@ function applyOnlineSnapshot(snapshot) {
   state.shoeNumber = snapshot.shoeNumber;
   state.phase = snapshot.phase;
   state.shoe = Array.from({ length: snapshot.cardsRemaining || 0 }, (_, index) => ({ id: `online-${index}` }));
-  state.player = (snapshot.playerCards || []).map(hydrateOnlineCard);
-  state.banker = (snapshot.bankerCards || []).map(hydrateOnlineCard);
-  state.history = snapshot.history || [];
-  state.lastOutcome = snapshot.lastOutcome;
-  state.message = snapshot.message;
+  state.player = "playerCards" in overrides
+    ? overrides.playerCards
+    : (snapshot.playerCards || []).map(hydrateOnlineCard);
+  state.banker = "bankerCards" in overrides
+    ? overrides.bankerCards
+    : (snapshot.bankerCards || []).map(hydrateOnlineCard);
+  state.history = "history" in overrides ? overrides.history : (snapshot.history || []);
+  state.lastOutcome = "lastOutcome" in overrides ? overrides.lastOutcome : snapshot.lastOutcome;
+  state.message = "message" in overrides ? overrides.message : snapshot.message;
+}
+
+function shouldAnimateOnlineReveal(snapshot) {
+  if (state.online.revealInProgress) return false;
+  if (prefersReducedMotion()) return false;
+  if (snapshot.phase !== "settled" || !snapshot.lastOutcome) return false;
+  if (!snapshot.playerCards?.length || !snapshot.bankerCards?.length) return false;
+  const roundKey = getOnlineOutcomeKey(snapshot);
+  return roundKey !== null && state.online.lastAnimatedRound !== roundKey;
+}
+
+async function animateOnlineReveal(snapshot) {
+  const roundKey = getOnlineOutcomeKey(snapshot);
+  state.online.revealInProgress = true;
+  state.online.lastAnimatedRound = roundKey;
+
+  try {
+    applyOnlineSnapshotCore(snapshot, {
+      playerCards: [],
+      bankerCards: [],
+      history: state.history,
+      lastOutcome: null,
+      message: "Opening cards...",
+    });
+    render();
+    await wait(180);
+
+    await revealOnlineCard("player", snapshot.playerCards[0], "Player first card.");
+    await revealOnlineCard("banker", snapshot.bankerCards[0], "Banker first card.");
+    await revealOnlineCard("player", snapshot.playerCards[1], "Player second card.");
+    await revealOnlineCard("banker", snapshot.bankerCards[1], "Banker second card.");
+
+    if (snapshot.playerCards[2]) {
+      await revealOnlineCard("player", snapshot.playerCards[2], "Player draws third card.", true);
+    }
+
+    if (snapshot.bankerCards[2]) {
+      await revealOnlineCard("banker", snapshot.bankerCards[2], "Banker draws third card.", true);
+    }
+
+    applyOnlineSnapshotCore(snapshot);
+    render();
+    await animateResultSplash(snapshot.lastOutcome);
+    await animatePayout(snapshot.lastOutcome);
+  } finally {
+    state.online.revealInProgress = false;
+  }
+}
+
+async function revealOnlineCard(side, card, message, slow = false) {
+  if (!card) return;
+  const visibleCard = hydrateOnlineCard(card);
+  visibleCard.fresh = true;
+  visibleCard.slow = slow;
+  state[side].push(visibleCard);
+  state.message = message;
+  render();
+  await wait(slow ? THIRD_CARD_PAUSE_MS : DEAL_MS);
+  visibleCard.fresh = false;
+  visibleCard.slow = false;
+}
+
+function getOnlineOutcomeKey(snapshot) {
+  if (!snapshot?.lastOutcome) return null;
+  return snapshot.lastOutcome.roundNumber ?? snapshot.roundNumber ?? null;
 }
 
 function normalizeBets(bets) {
