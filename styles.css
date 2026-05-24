@@ -128,10 +128,10 @@ h1 {
 
 .casino-grid {
   display: grid;
-  grid-template-columns: minmax(620px, 1fr) 330px;
+  grid-template-columns: minmax(250px, 0.62fr) minmax(560px, 1.5fr) minmax(300px, 0.78fr);
   grid-template-areas:
-    "roads roads"
-    "table side";
+    "roads roads roads"
+    "tools table side";
   gap: 14px;
   align-items: start;
 }
@@ -144,11 +144,16 @@ h1 {
   grid-area: table;
 }
 
+.road-tools {
+  grid-area: tools;
+}
+
 .side-panel {
   grid-area: side;
 }
 
 .road-panel,
+.road-tools,
 .side-panel,
 .table-panel {
   border-radius: 18px;
@@ -373,6 +378,29 @@ h1 {
   gap: 10px;
   padding: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.road-tools {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(243, 209, 111, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(11, 55, 36, 0.96), rgba(4, 18, 12, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.road-tools .derived-roads {
+  grid-template-columns: 1fr;
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+
+.road-tools .forecast-card {
+  grid-column: auto;
+  order: -1;
+}
+
+.road-tools .mini-roads {
+  grid-template-columns: 1fr;
+  padding-top: 0;
 }
 
 .road-card {
@@ -1768,8 +1796,12 @@ button:disabled {
     order: 2;
   }
 
-  .side-panel {
+  .road-tools {
     order: 3;
+  }
+
+  .side-panel {
+    order: 4;
   }
 }
 
