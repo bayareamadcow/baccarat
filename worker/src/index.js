@@ -13,6 +13,7 @@ const BLACKJACK_SEATS = 5;
 const BLACKJACK_MIN_BET = 25;
 const BLACKJACK_MAX_BET = 500;
 const BLACKJACK_CUT_CARD_REMAINING = 15;
+const BLACKJACK_ACTION_MS = 10000;
 
 const SUITS = [
   { code: "H", symbol: "\u2665", red: true },
@@ -94,6 +95,7 @@ export class BaccaratTable {
 
       if (url.pathname.includes("/api/blackjack/")) {
         const player = ensurePlayer(table, playerId, playerName, now);
+        advanceBlackjackToNow(table, now);
         const response = this.handleBlackjack(url, table, player, body, now);
         await this.saveTable(table);
         return json(response);
@@ -243,7 +245,7 @@ export class BaccaratTable {
     }
 
     if (url.pathname.endsWith("/api/blackjack/seat")) {
-      sitBlackjackSeat(table, player, Number(body.seat), Number(body.bet || BLACKJACK_MIN_BET));
+      sitBlackjackSeat(table, player, Number(body.seat), Number(body.bet || BLACKJACK_MIN_BET), body.mode === "add");
       return this.blackjackSnapshot(table, player.id);
     }
 
@@ -341,8 +343,7 @@ export class BaccaratTable {
 
 function settleTableRound(table, now) {
   if (table.shoe.length <= CUT_CARD_REMAINING) {
-    table.shoe = shuffle(createShoe());
-    table.shoeNumber += 1;
+    resetBaccaratShoe(table);
   }
 
   const playerCards = [drawCard(table), drawCard(table)];
@@ -386,10 +387,16 @@ function startNextBettingRound(table, now) {
   table.message = "Betting is open. Buy in before the countdown ends.";
 
   if (table.shoe.length <= CUT_CARD_REMAINING) {
-    table.shoe = shuffle(createShoe());
-    table.shoeNumber += 1;
+    resetBaccaratShoe(table);
     table.message = "Cut card reached. New shoe is live.";
   }
+}
+
+function resetBaccaratShoe(table) {
+  table.shoe = shuffle(createShoe());
+  table.shoeNumber += 1;
+  table.history = [];
+  table.lastOutcome = null;
 }
 
 function buildGlobalOutcome(playerCards, bankerCards) {
@@ -489,8 +496,7 @@ function bankerShouldDraw(total, playerThirdValue) {
 
 function drawCard(table) {
   if (table.shoe.length === 0) {
-    table.shoe = shuffle(createShoe());
-    table.shoeNumber += 1;
+    resetBaccaratShoe(table);
   }
   return table.shoe.pop();
 }
@@ -638,6 +644,7 @@ function createBlackjackTable() {
     dealer: { cards: [] },
     seats: createBlackjackSeats(),
     currentSeat: null,
+    actionDeadlineAt: null,
     lastCompletedAt: null,
     message: "Choose a seat to join the blackjack table.",
   };
@@ -653,6 +660,7 @@ function createBlackjackSeats() {
     active: false,
     resolved: false,
     doubled: false,
+    autoStood: false,
     outcome: "",
     result: "",
     settledNet: 0,
@@ -681,7 +689,7 @@ function createBlackjackShoe() {
   return cards;
 }
 
-function sitBlackjackSeat(table, player, seatNumber, bet) {
+function sitBlackjackSeat(table, player, seatNumber, bet, addToSeat = false) {
   const blackjack = ensureBlackjackTable(table);
   assertBlackjackSeatSetupOpen(blackjack);
   const seat = getBlackjackSeat(blackjack, seatNumber);
@@ -693,22 +701,30 @@ function sitBlackjackSeat(table, player, seatNumber, bet) {
       clearBlackjackSeat(otherSeat);
     }
   }
-  const normalizedBet = normalizeBlackjackBet(bet);
-  if (player.bankroll < normalizedBet) {
+  const chip = normalizeBlackjackChip(bet);
+  const previousBet = seat.playerId === player.id ? seat.bet : 0;
+  const nextBet = addToSeat && previousBet > 0 ? Math.min(BLACKJACK_MAX_BET, previousBet + chip) : chip;
+  if (nextBet === previousBet) {
+    throw new Error(`Seat ${seat.seat} is already at the ${formatMoney(BLACKJACK_MAX_BET)} max.`);
+  }
+  if (player.bankroll < nextBet) {
     throw new Error("Not enough bankroll for that seat bet.");
   }
   seat.playerId = player.id;
   seat.name = player.name;
-  seat.bet = normalizedBet;
+  seat.bet = nextBet;
   seat.cards = [];
   seat.active = false;
   seat.resolved = false;
   seat.doubled = false;
+  seat.autoStood = false;
   seat.outcome = "";
   seat.result = "";
   seat.settledNet = 0;
   blackjack.currentSeat = null;
-  blackjack.message = `${player.name} joined Seat ${seat.seat} for ${formatMoney(seat.bet)}.`;
+  blackjack.message = previousBet > 0 && addToSeat
+    ? `${player.name} added ${formatMoney(nextBet - previousBet)} to Seat ${seat.seat}. Total ${formatMoney(seat.bet)}.`
+    : `${player.name} joined Seat ${seat.seat} for ${formatMoney(seat.bet)}.`;
 }
 
 function leaveBlackjackSeat(blackjack, playerId) {
@@ -754,6 +770,7 @@ function startBlackjackRound(table) {
     seat.active = Boolean(seat.playerId);
     seat.resolved = !seat.active;
     seat.doubled = false;
+    seat.autoStood = false;
     seat.outcome = "";
     seat.result = "";
     seat.settledNet = 0;
@@ -855,15 +872,34 @@ function advanceBlackjackTurn(table, blackjack) {
   if (nextSeat) {
     blackjack.phase = "player-turn";
     blackjack.currentSeat = nextSeat.seat;
+    blackjack.actionDeadlineAt = Date.now() + BLACKJACK_ACTION_MS;
     blackjack.message = `${nextSeat.name}'s turn on Seat ${nextSeat.seat}.`;
     return;
   }
   playBlackjackDealer(table, blackjack);
 }
 
+function advanceBlackjackToNow(table, now) {
+  const blackjack = table.blackjack;
+  if (!blackjack || blackjack.phase !== "player-turn" || !blackjack.actionDeadlineAt || blackjack.actionDeadlineAt > now) {
+    return;
+  }
+  const seat = blackjack.seats.find((item) => item.seat === blackjack.currentSeat);
+  if (!seat || seat.resolved) {
+    advanceBlackjackTurn(table, blackjack);
+    return;
+  }
+  seat.resolved = true;
+  seat.autoStood = true;
+  seat.result = "Auto stand";
+  blackjack.message = `${seat.name} timed out and stood on Seat ${seat.seat}.`;
+  advanceBlackjackTurn(table, blackjack);
+}
+
 function playBlackjackDealer(table, blackjack) {
   blackjack.phase = "dealer-turn";
   blackjack.currentSeat = null;
+  blackjack.actionDeadlineAt = null;
   revealDealerHoleCard(blackjack);
   const needsDealer = blackjack.seats.some((seat) => (
     seat.active &&
@@ -927,7 +963,7 @@ function settleBlackjackRound(table, blackjack, message) {
     }
 
     seat.resolved = true;
-    seat.result = result;
+    seat.result = seat.autoStood ? `Auto stand · ${result}` : result;
     seat.settledNet = returnAmount - seat.bet;
     player.bankroll += returnAmount;
     player.handsPlayed += 1;
@@ -941,6 +977,7 @@ function settleBlackjackRound(table, blackjack, message) {
 
   blackjack.phase = "settled";
   blackjack.currentSeat = null;
+  blackjack.actionDeadlineAt = null;
   blackjack.lastCompletedAt = Date.now();
   blackjack.message = `${message} ${dealerLabel}.`;
 }
@@ -953,6 +990,10 @@ function sanitizeBlackjack(blackjack, playerId) {
     phase: blackjack.phase,
     cardsRemaining: blackjack.shoe.length,
     currentSeat: blackjack.currentSeat,
+    actionDeadlineAt: blackjack.actionDeadlineAt,
+    secondsRemaining: blackjack.phase === "player-turn" && blackjack.actionDeadlineAt
+      ? Math.max(0, Math.ceil((blackjack.actionDeadlineAt - Date.now()) / 1000))
+      : null,
     mySeat,
     canStart: (blackjack.phase === "waiting" || blackjack.phase === "settled") && blackjack.seats.some((seat) => seat.playerId),
     canAct: blackjack.phase === "player-turn" && blackjack.seats.find((seat) => seat.seat === blackjack.currentSeat)?.playerId === playerId,
@@ -973,6 +1014,7 @@ function sanitizeBlackjack(blackjack, playerId) {
         active: seat.active,
         resolved: seat.resolved,
         doubled: seat.doubled,
+        autoStood: seat.autoStood,
         outcome: seat.outcome,
         result: seat.result,
         settledNet: seat.settledNet,
@@ -1001,6 +1043,7 @@ function clearBlackjackSeat(seat) {
   seat.active = false;
   seat.resolved = false;
   seat.doubled = false;
+  seat.autoStood = false;
   seat.outcome = "";
   seat.result = "";
   seat.settledNet = 0;
@@ -1018,6 +1061,14 @@ function normalizeBlackjackBet(bet) {
   const parsed = Number(bet) || BLACKJACK_MIN_BET;
   const rounded = Math.round(parsed / 25) * 25;
   return Math.max(BLACKJACK_MIN_BET, Math.min(BLACKJACK_MAX_BET, rounded));
+}
+
+function normalizeBlackjackChip(chip) {
+  const parsed = Number(chip);
+  if (!CHIP_VALUES.has(parsed)) {
+    throw new Error("Choose a chip: $25, $50, $100, $200, or $500.");
+  }
+  return parsed;
 }
 
 function drawBlackjackCard(blackjack) {

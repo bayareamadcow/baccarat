@@ -203,6 +203,7 @@ function newShoe(message, clearBets = true) {
   state.phase = "betting";
   state.player = [];
   state.banker = [];
+  state.history = [];
   if (clearBets) {
     state.bets = createEmptyBets();
   }
@@ -329,8 +330,7 @@ async function freeHands(count) {
   let lastOutcome = null;
   for (let index = 0; index < safeCount; index += 1) {
     if (state.shoe.length <= CUT_CARD_REMAINING) {
-      state.shoe = shuffle(createShoe());
-      state.shoeNumber += 1;
+      newShoe("Cut card reached. New shoe is live.", false);
     }
     state.roundNumber += 1;
     dealFreeHandCards();
@@ -946,11 +946,13 @@ function renderRoads() {
   renderForecast(outcomes);
 
   const stats = {
-    庄: outcomes.filter((item) => item.winner === "banker").length,
-    闲: outcomes.filter((item) => item.winner === "player").length,
-    和: outcomes.filter((item) => item.winner === "tie").length,
+    "庄 Banker": outcomes.filter((item) => item.winner === "banker").length,
+    "闲 Player": outcomes.filter((item) => item.winner === "player").length,
+    "和 Tie": outcomes.filter((item) => item.winner === "tie").length,
     Dragon: outcomes.filter((item) => item.dragon).length,
     Panda: outcomes.filter((item) => item.panda).length,
+    "上次 Dragon / Last Dragon": formatBonusAge(state.history, "dragon"),
+    "上次 Panda / Last Panda": formatBonusAge(state.history, "panda"),
   };
   dom.statsList.replaceChildren();
   Object.entries(stats).forEach(([label, value]) => {
@@ -958,6 +960,13 @@ function renderRoads() {
     row.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
     dom.statsList.appendChild(row);
   });
+}
+
+function formatBonusAge(newestFirstHistory, key) {
+  const index = newestFirstHistory.findIndex((item) => item?.[key]);
+  if (index < 0) return "本 Shoe 未出 / none this shoe";
+  if (index === 0) return "刚刚 / just now";
+  return `${index} 手前 / ${index} hands ago`;
 }
 
 function buildBigRoad(outcomes) {
