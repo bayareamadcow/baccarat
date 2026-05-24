@@ -659,6 +659,8 @@ function createBlackjackSeats() {
     playerId: null,
     name: "",
     bet: BLACKJACK_MIN_BET,
+    lastBet: 0,
+    needsBet: false,
     cards: [],
     hands: [],
     splitCount: 0,
@@ -764,6 +766,7 @@ function sitBlackjackSeat(table, player, seatNumber, bet, addToSeat = false) {
   seat.playerId = player.id;
   seat.name = player.name;
   seat.bet = nextBet;
+  seat.needsBet = false;
   seat.cards = [];
   seat.hands = [];
   seat.splitCount = 0;
@@ -797,9 +800,12 @@ function leaveBlackjackSeat(blackjack, playerId) {
 function startBlackjackRound(table) {
   const blackjack = ensureBlackjackTable(table);
   assertBlackjackSeatSetupOpen(blackjack);
-  const activeSeats = blackjack.seats.filter((seat) => seat.playerId);
+  const stoodUpSeats = standUpUnfundedBlackjackSeats(blackjack);
+  const activeSeats = blackjack.seats.filter((seat) => seat.playerId && seat.bet >= BLACKJACK_MIN_BET);
   if (activeSeats.length === 0) {
-    throw new Error("Choose at least one seat before dealing.");
+    throw new Error(stoodUpSeats.length
+      ? "Losing seats must put chips back before the next hand."
+      : "Choose at least one seat before dealing.");
   }
 
   if (blackjack.shoe.length <= BLACKJACK_CUT_CARD_REMAINING) {
@@ -834,8 +840,10 @@ function startBlackjackRound(table) {
     seat.outcome = "";
     seat.result = "";
     seat.settledNet = 0;
+    seat.needsBet = false;
     if (seat.active) {
       const player = table.players[seat.playerId];
+      seat.lastBet = seat.bet;
       seat.hands = [createBlackjackHand(seat.bet)];
       seat.cards = seat.hands[0].cards;
       player.bankroll -= seat.bet;
@@ -1065,6 +1073,7 @@ function settleBlackjackRound(table, blackjack, message) {
   for (const seat of blackjack.seats.filter((item) => item.active)) {
     const player = table.players[seat.playerId];
     if (!player) continue;
+    let seatNet = 0;
     for (const hand of getSeatHands(seat)) {
       const handValue = getBlackjackHandValue(hand.cards);
       const playerBlackjack = hasBlackjackNatural(hand.cards) && !hand.doubled && !hand.fromSplit;
@@ -1106,10 +1115,18 @@ function settleBlackjackRound(table, blackjack, message) {
       hand.resolved = true;
       hand.result = hand.autoStood ? `Auto stand · ${result}` : result;
       hand.settledNet = returnAmount - hand.bet;
+      seatNet += hand.settledNet;
       player.bankroll += returnAmount;
       player.handsPlayed += 1;
       netByPlayer[player.id] = (netByPlayer[player.id] || 0) + hand.settledNet;
       player.bestHandNet = Math.max(player.bestHandNet || 0, hand.settledNet);
+    }
+    if (seatNet < 0) {
+      seat.lastBet = seat.bet;
+      seat.bet = 0;
+      seat.needsBet = true;
+    } else {
+      seat.needsBet = false;
     }
     syncSeatLegacyFields(seat);
   }
@@ -1142,7 +1159,7 @@ function sanitizeBlackjack(blackjack, playerId, player) {
       ? Math.max(0, Math.ceil((blackjack.actionDeadlineAt - Date.now()) / 1000))
       : null,
     mySeat,
-    canStart: (blackjack.phase === "waiting" || blackjack.phase === "settled") && blackjack.seats.some((seat) => seat.playerId),
+    canStart: (blackjack.phase === "waiting" || blackjack.phase === "settled") && blackjack.seats.some((seat) => seat.playerId && seat.bet >= BLACKJACK_MIN_BET),
     canAct: blackjack.phase === "player-turn" && blackjack.seats.find((seat) => seat.seat === blackjack.currentSeat)?.playerId === playerId,
     canDouble: blackjack.phase === "player-turn" && currentSeat?.playerId === playerId && canBlackjackDouble(currentHand, player),
     canSplit: blackjack.phase === "player-turn" && currentSeat?.playerId === playerId && canBlackjackSplit(currentSeat, currentHand, player),
@@ -1160,6 +1177,8 @@ function sanitizeBlackjack(blackjack, playerId, player) {
         playerId: seat.playerId,
         name: seat.name,
         bet: seat.bet,
+        lastBet: seat.lastBet || 0,
+        needsBet: Boolean(seat.needsBet),
         totalBet: hands.reduce((sum, hand) => sum + (hand.bet || 0), 0) || seat.bet,
         cards: (currentDisplayHand?.cards || seat.cards || []).map((card) => ({ ...card })),
         hands: hands.map((hand, handIndex) => ({
@@ -1211,6 +1230,9 @@ function assertBlackjackSeatSetupOpen(blackjack) {
 function clearBlackjackSeat(seat) {
   seat.playerId = null;
   seat.name = "";
+  seat.bet = BLACKJACK_MIN_BET;
+  seat.lastBet = 0;
+  seat.needsBet = false;
   seat.cards = [];
   seat.hands = [];
   seat.splitCount = 0;
@@ -1222,6 +1244,20 @@ function clearBlackjackSeat(seat) {
   seat.outcome = "";
   seat.result = "";
   seat.settledNet = 0;
+}
+
+function standUpUnfundedBlackjackSeats(blackjack) {
+  const stoodUpSeats = [];
+  for (const seat of blackjack.seats) {
+    if (seat.playerId && seat.bet < BLACKJACK_MIN_BET) {
+      stoodUpSeats.push(seat.seat);
+      clearBlackjackSeat(seat);
+    }
+  }
+  if (stoodUpSeats.length) {
+    blackjack.message = `Seat ${stoodUpSeats.join(", ")} stood up because no next-hand bet was placed.`;
+  }
+  return stoodUpSeats;
 }
 
 function getBlackjackSeat(blackjack, seatNumber) {
