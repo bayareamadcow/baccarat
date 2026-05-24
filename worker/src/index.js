@@ -14,6 +14,7 @@ const BLACKJACK_MIN_BET = 25;
 const BLACKJACK_MAX_BET = 500;
 const BLACKJACK_CUT_CARD_REMAINING = 15;
 const BLACKJACK_ACTION_MS = 10000;
+const BLACKJACK_DEAL_READY_MS = 10000;
 const BLACKJACK_MAX_SPLITS = 4;
 const BLACKJACK_MAX_HANDS_PER_SEAT = BLACKJACK_MAX_SPLITS + 1;
 
@@ -272,6 +273,7 @@ export class BaccaratTable {
       }
       player.bankroll = STARTING_BANKROLL;
       player.reloadCount += 1;
+      bumpBlackjackDealReady(blackjack);
       blackjack.message = `${player.name} reloaded chips.`;
       return this.blackjackSnapshot(table, player.id);
     }
@@ -634,6 +636,9 @@ function ensureBlackjackTable(table) {
     table.blackjack.shoe = shuffle(createBlackjackShoe());
     table.blackjack.shoeNumber = (table.blackjack.shoeNumber || 0) + 1;
   }
+  if (!Number.isFinite(table.blackjack.dealReadyAt)) {
+    table.blackjack.dealReadyAt = Date.now() + BLACKJACK_DEAL_READY_MS;
+  }
   return table.blackjack;
 }
 
@@ -648,6 +653,7 @@ function createBlackjackTable() {
     currentSeat: null,
     currentHandIndex: 0,
     actionDeadlineAt: null,
+    dealReadyAt: Date.now() + BLACKJACK_DEAL_READY_MS,
     lastCompletedAt: null,
     message: "Choose a seat to join the blackjack table.",
   };
@@ -778,6 +784,7 @@ function sitBlackjackSeat(table, player, seatNumber, bet, addToSeat = false) {
   seat.outcome = "";
   seat.result = "";
   seat.settledNet = 0;
+  bumpBlackjackDealReady(blackjack);
   blackjack.currentSeat = null;
   blackjack.currentHandIndex = 0;
   blackjack.message = previousBet > 0 && addToSeat
@@ -792,14 +799,35 @@ function leaveBlackjackSeat(blackjack, playerId) {
       clearBlackjackSeat(seat);
     }
   }
+  bumpBlackjackDealReady(blackjack);
   blackjack.currentSeat = null;
   blackjack.currentHandIndex = 0;
   blackjack.message = "Seat is open for the next player.";
 }
 
+function bumpBlackjackDealReady(blackjack, now = Date.now()) {
+  if (blackjack.phase === "waiting" || blackjack.phase === "settled") {
+    blackjack.dealReadyAt = now + BLACKJACK_DEAL_READY_MS;
+  }
+}
+
+function getBlackjackDealSecondsRemaining(blackjack, now = Date.now()) {
+  if (blackjack.phase !== "waiting" && blackjack.phase !== "settled") return null;
+  if (!Number.isFinite(blackjack.dealReadyAt)) return 0;
+  return Math.max(0, Math.ceil((blackjack.dealReadyAt - now) / 1000));
+}
+
+function isBlackjackDealReady(blackjack, now = Date.now()) {
+  return getBlackjackDealSecondsRemaining(blackjack, now) <= 0;
+}
+
 function startBlackjackRound(table) {
   const blackjack = ensureBlackjackTable(table);
   assertBlackjackSeatSetupOpen(blackjack);
+  const fundedSeats = blackjack.seats.filter((seat) => seat.playerId && seat.bet >= BLACKJACK_MIN_BET);
+  if (fundedSeats.length > 0 && !isBlackjackDealReady(blackjack)) {
+    throw new Error(`Deal opens in ${getBlackjackDealSecondsRemaining(blackjack)}s. Finish bets first.`);
+  }
   const stoodUpSeats = standUpUnfundedBlackjackSeats(blackjack);
   const activeSeats = blackjack.seats.filter((seat) => seat.playerId && seat.bet >= BLACKJACK_MIN_BET);
   if (activeSeats.length === 0) {
@@ -826,6 +854,7 @@ function startBlackjackRound(table) {
   blackjack.dealer = { cards: [] };
   blackjack.currentSeat = null;
   blackjack.currentHandIndex = 0;
+  blackjack.dealReadyAt = null;
   blackjack.message = `Blackjack round ${blackjack.roundNumber} is dealing.`;
 
   for (const seat of blackjack.seats) {
@@ -1139,6 +1168,7 @@ function settleBlackjackRound(table, blackjack, message) {
   blackjack.currentSeat = null;
   blackjack.currentHandIndex = 0;
   blackjack.actionDeadlineAt = null;
+  blackjack.dealReadyAt = Date.now() + BLACKJACK_DEAL_READY_MS;
   blackjack.lastCompletedAt = Date.now();
   blackjack.message = `${message} ${dealerLabel}.`;
 }
@@ -1147,6 +1177,8 @@ function sanitizeBlackjack(blackjack, playerId, player) {
   const mySeat = blackjack.seats.find((seat) => seat.playerId === playerId)?.seat || null;
   const currentSeat = blackjack.seats.find((seat) => seat.seat === blackjack.currentSeat) || null;
   const currentHand = currentSeat ? getSeatHands(currentSeat)[blackjack.currentHandIndex || 0] : null;
+  const hasFundedSeat = blackjack.seats.some((seat) => seat.playerId && seat.bet >= BLACKJACK_MIN_BET);
+  const dealSecondsRemaining = getBlackjackDealSecondsRemaining(blackjack);
   return {
     shoeNumber: blackjack.shoeNumber,
     roundNumber: blackjack.roundNumber,
@@ -1155,11 +1187,13 @@ function sanitizeBlackjack(blackjack, playerId, player) {
     currentSeat: blackjack.currentSeat,
     currentHandIndex: blackjack.currentHandIndex || 0,
     actionDeadlineAt: blackjack.actionDeadlineAt,
+    dealReadyAt: blackjack.dealReadyAt,
     secondsRemaining: blackjack.phase === "player-turn" && blackjack.actionDeadlineAt
       ? Math.max(0, Math.ceil((blackjack.actionDeadlineAt - Date.now()) / 1000))
       : null,
+    dealSecondsRemaining,
     mySeat,
-    canStart: (blackjack.phase === "waiting" || blackjack.phase === "settled") && blackjack.seats.some((seat) => seat.playerId && seat.bet >= BLACKJACK_MIN_BET),
+    canStart: (blackjack.phase === "waiting" || blackjack.phase === "settled") && hasFundedSeat && dealSecondsRemaining <= 0,
     canAct: blackjack.phase === "player-turn" && blackjack.seats.find((seat) => seat.seat === blackjack.currentSeat)?.playerId === playerId,
     canDouble: blackjack.phase === "player-turn" && currentSeat?.playerId === playerId && canBlackjackDouble(currentHand, player),
     canSplit: blackjack.phase === "player-turn" && currentSeat?.playerId === playerId && canBlackjackSplit(currentSeat, currentHand, player),
