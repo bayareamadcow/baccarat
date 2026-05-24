@@ -8,6 +8,11 @@ const HISTORY_LIMIT = 120;
 const LEADERBOARD_SIZE = 10;
 const BET_KEYS = ["player", "panda", "tie", "dragon", "banker"];
 const CHIP_VALUES = new Set([25, 50, 100, 200, 500]);
+const BLACKJACK_DECKS = 2;
+const BLACKJACK_SEATS = 5;
+const BLACKJACK_MIN_BET = 25;
+const BLACKJACK_MAX_BET = 500;
+const BLACKJACK_CUT_CARD_REMAINING = 15;
 
 const SUITS = [
   { code: "H", symbol: "\u2665", red: true },
@@ -85,6 +90,13 @@ export class BaccaratTable {
         const player = ensurePlayer(table, playerId, playerName, now);
         await this.saveTable(table);
         return json(this.snapshot(table, player.id, now));
+      }
+
+      if (url.pathname.includes("/api/blackjack/")) {
+        const player = ensurePlayer(table, playerId, playerName, now);
+        const response = this.handleBlackjack(url, table, player, body, now);
+        await this.saveTable(table);
+        return json(response);
       }
 
       if (url.pathname.endsWith("/api/player")) {
@@ -220,6 +232,70 @@ export class BaccaratTable {
     table.bets[player.id] = bets;
     player.lastSeenAt = Date.now();
     table.message = `${player.name} bet ${formatMoney(amount)} on ${LABELS[key]}.`;
+  }
+
+  handleBlackjack(url, table, player, body, now) {
+    const blackjack = ensureBlackjackTable(table);
+    player.lastSeenAt = now;
+
+    if (url.pathname.endsWith("/api/blackjack/state")) {
+      return this.blackjackSnapshot(table, player.id);
+    }
+
+    if (url.pathname.endsWith("/api/blackjack/seat")) {
+      sitBlackjackSeat(table, player, Number(body.seat), Number(body.bet || BLACKJACK_MIN_BET));
+      return this.blackjackSnapshot(table, player.id);
+    }
+
+    if (url.pathname.endsWith("/api/blackjack/leave")) {
+      leaveBlackjackSeat(blackjack, player.id);
+      return this.blackjackSnapshot(table, player.id);
+    }
+
+    if (url.pathname.endsWith("/api/blackjack/start")) {
+      startBlackjackRound(table);
+      return this.blackjackSnapshot(table, player.id);
+    }
+
+    if (url.pathname.endsWith("/api/blackjack/action")) {
+      actBlackjack(table, player, String(body.action || ""));
+      return this.blackjackSnapshot(table, player.id);
+    }
+
+    if (url.pathname.endsWith("/api/blackjack/reload")) {
+      if (blackjack.phase !== "waiting" && blackjack.phase !== "settled") {
+        throw new Error("Reload is available between hands.");
+      }
+      player.bankroll = STARTING_BANKROLL;
+      player.reloadCount += 1;
+      blackjack.message = `${player.name} reloaded chips.`;
+      return this.blackjackSnapshot(table, player.id);
+    }
+
+    throw new Error("Unknown blackjack action.");
+  }
+
+  blackjackSnapshot(table, playerId) {
+    const blackjack = ensureBlackjackTable(table);
+    const player = table.players[playerId];
+    return {
+      ok: true,
+      mode: "blackjack",
+      room: table.room,
+      player: {
+        id: player.id,
+        name: player.name,
+        bankroll: player.bankroll,
+        reloadCount: player.reloadCount,
+        handsPlayed: player.handsPlayed,
+        totalWagered: player.totalWagered,
+        lastHandNet: player.lastHandNet,
+        bestHandNet: player.bestHandNet,
+        bonusHits: player.bonusHits,
+      },
+      blackjack: sanitizeBlackjack(blackjack, playerId),
+      leaderboard: buildLeaderboard(table, playerId),
+    };
   }
 
   snapshot(table, playerId, now) {
@@ -537,6 +613,471 @@ function cloneBets(bets) {
     clone[key] = bets?.[key] || 0;
     return clone;
   }, {});
+}
+
+function ensureBlackjackTable(table) {
+  if (!table.blackjack) {
+    table.blackjack = createBlackjackTable();
+  }
+  if (!Array.isArray(table.blackjack.seats) || table.blackjack.seats.length !== BLACKJACK_SEATS) {
+    table.blackjack.seats = createBlackjackSeats();
+  }
+  if (!Array.isArray(table.blackjack.shoe) || table.blackjack.shoe.length === 0) {
+    table.blackjack.shoe = shuffle(createBlackjackShoe());
+    table.blackjack.shoeNumber = (table.blackjack.shoeNumber || 0) + 1;
+  }
+  return table.blackjack;
+}
+
+function createBlackjackTable() {
+  return {
+    shoe: shuffle(createBlackjackShoe()),
+    shoeNumber: 1,
+    roundNumber: 0,
+    phase: "waiting",
+    dealer: { cards: [] },
+    seats: createBlackjackSeats(),
+    currentSeat: null,
+    lastCompletedAt: null,
+    message: "Choose a seat to join the blackjack table.",
+  };
+}
+
+function createBlackjackSeats() {
+  return Array.from({ length: BLACKJACK_SEATS }, (_, index) => ({
+    seat: index + 1,
+    playerId: null,
+    name: "",
+    bet: BLACKJACK_MIN_BET,
+    cards: [],
+    active: false,
+    resolved: false,
+    doubled: false,
+    outcome: "",
+    result: "",
+    settledNet: 0,
+  }));
+}
+
+function createBlackjackShoe() {
+  const cards = [];
+  let id = 1;
+  for (let deck = 1; deck <= BLACKJACK_DECKS; deck += 1) {
+    for (const suit of SUITS) {
+      for (const rank of RANKS) {
+        cards.push({
+          id: `bj-${deck}-${id}`,
+          rank,
+          suit: suit.code,
+          symbol: suit.symbol,
+          red: suit.red,
+          value: getBlackjackRankValue(rank),
+          fresh: false,
+        });
+        id += 1;
+      }
+    }
+  }
+  return cards;
+}
+
+function sitBlackjackSeat(table, player, seatNumber, bet) {
+  const blackjack = ensureBlackjackTable(table);
+  assertBlackjackSeatSetupOpen(blackjack);
+  const seat = getBlackjackSeat(blackjack, seatNumber);
+  if (seat.playerId && seat.playerId !== player.id) {
+    throw new Error(`Seat ${seatNumber} is already taken.`);
+  }
+  for (const otherSeat of blackjack.seats) {
+    if (otherSeat.playerId === player.id && otherSeat.seat !== seat.seat) {
+      clearBlackjackSeat(otherSeat);
+    }
+  }
+  const normalizedBet = normalizeBlackjackBet(bet);
+  if (player.bankroll < normalizedBet) {
+    throw new Error("Not enough bankroll for that seat bet.");
+  }
+  seat.playerId = player.id;
+  seat.name = player.name;
+  seat.bet = normalizedBet;
+  seat.cards = [];
+  seat.active = false;
+  seat.resolved = false;
+  seat.doubled = false;
+  seat.outcome = "";
+  seat.result = "";
+  seat.settledNet = 0;
+  blackjack.currentSeat = null;
+  blackjack.message = `${player.name} joined Seat ${seat.seat} for ${formatMoney(seat.bet)}.`;
+}
+
+function leaveBlackjackSeat(blackjack, playerId) {
+  assertBlackjackSeatSetupOpen(blackjack);
+  for (const seat of blackjack.seats) {
+    if (seat.playerId === playerId) {
+      clearBlackjackSeat(seat);
+    }
+  }
+  blackjack.currentSeat = null;
+  blackjack.message = "Seat is open for the next player.";
+}
+
+function startBlackjackRound(table) {
+  const blackjack = ensureBlackjackTable(table);
+  assertBlackjackSeatSetupOpen(blackjack);
+  const activeSeats = blackjack.seats.filter((seat) => seat.playerId);
+  if (activeSeats.length === 0) {
+    throw new Error("Choose at least one seat before dealing.");
+  }
+
+  if (blackjack.shoe.length <= BLACKJACK_CUT_CARD_REMAINING) {
+    blackjack.shoe = shuffle(createBlackjackShoe());
+    blackjack.shoeNumber += 1;
+  }
+
+  for (const seat of activeSeats) {
+    const player = table.players[seat.playerId];
+    if (!player) throw new Error(`Seat ${seat.seat} player is no longer available.`);
+    if (player.bankroll < seat.bet) {
+      throw new Error(`${player.name} does not have enough bankroll for Seat ${seat.seat}.`);
+    }
+  }
+
+  blackjack.roundNumber += 1;
+  blackjack.phase = "dealing";
+  blackjack.dealer = { cards: [] };
+  blackjack.currentSeat = null;
+  blackjack.message = `Blackjack round ${blackjack.roundNumber} is dealing.`;
+
+  for (const seat of blackjack.seats) {
+    seat.cards = [];
+    seat.active = Boolean(seat.playerId);
+    seat.resolved = !seat.active;
+    seat.doubled = false;
+    seat.outcome = "";
+    seat.result = "";
+    seat.settledNet = 0;
+    if (seat.active) {
+      const player = table.players[seat.playerId];
+      player.bankroll -= seat.bet;
+      player.totalWagered += seat.bet;
+    }
+  }
+
+  for (const seat of activeSeats) seat.cards.push(drawBlackjackCard(blackjack));
+  blackjack.dealer.cards.push(drawBlackjackCard(blackjack));
+  for (const seat of activeSeats) seat.cards.push(drawBlackjackCard(blackjack));
+  blackjack.dealer.cards.push({ ...drawBlackjackCard(blackjack), faceDown: true });
+
+  resolveOpeningBlackjacks(table, blackjack);
+  advanceBlackjackTurn(table, blackjack);
+}
+
+function actBlackjack(table, player, action) {
+  const blackjack = ensureBlackjackTable(table);
+  if (blackjack.phase !== "player-turn") {
+    throw new Error("No player action is open right now.");
+  }
+  const seat = getBlackjackSeat(blackjack, blackjack.currentSeat);
+  if (seat.playerId !== player.id) {
+    throw new Error(`It is Seat ${seat.seat}'s turn.`);
+  }
+  if (seat.resolved) {
+    advanceBlackjackTurn(table, blackjack);
+    return;
+  }
+
+  if (action === "hit") {
+    seat.cards.push(drawBlackjackCard(blackjack));
+    const value = getBlackjackHandValue(seat.cards).total;
+    if (value > 21) {
+      seat.resolved = true;
+      seat.outcome = "lose";
+      seat.result = "Bust";
+      blackjack.message = `${player.name} busted Seat ${seat.seat}.`;
+    } else if (value === 21) {
+      seat.resolved = true;
+      seat.result = "21";
+      blackjack.message = `${player.name} made 21 on Seat ${seat.seat}.`;
+    } else {
+      blackjack.message = `${player.name} hit Seat ${seat.seat}.`;
+    }
+    advanceBlackjackTurn(table, blackjack);
+    return;
+  }
+
+  if (action === "stand") {
+    seat.resolved = true;
+    seat.result = "Stand";
+    blackjack.message = `${player.name} stood on Seat ${seat.seat}.`;
+    advanceBlackjackTurn(table, blackjack);
+    return;
+  }
+
+  if (action === "double") {
+    if (!canBlackjackDouble(seat, player)) {
+      throw new Error("Double is only available on 9, 10, or 11 with two cards.");
+    }
+    player.bankroll -= seat.bet;
+    player.totalWagered += seat.bet;
+    seat.bet *= 2;
+    seat.doubled = true;
+    seat.cards.push(drawBlackjackCard(blackjack));
+    const value = getBlackjackHandValue(seat.cards).total;
+    seat.resolved = true;
+    seat.result = value > 21 ? "Double bust" : "Double";
+    seat.outcome = value > 21 ? "lose" : "";
+    blackjack.message = `${player.name} doubled Seat ${seat.seat}.`;
+    advanceBlackjackTurn(table, blackjack);
+    return;
+  }
+
+  throw new Error("Unknown blackjack action.");
+}
+
+function resolveOpeningBlackjacks(table, blackjack) {
+  const dealerBlackjack = hasBlackjackNatural(blackjack.dealer.cards);
+  for (const seat of blackjack.seats.filter((item) => item.active)) {
+    if (hasBlackjackNatural(seat.cards)) {
+      seat.resolved = true;
+      seat.result = "Blackjack 3:2";
+    }
+  }
+  if (dealerBlackjack) {
+    revealDealerHoleCard(blackjack);
+    settleBlackjackRound(table, blackjack, "Dealer has blackjack.");
+  }
+}
+
+function advanceBlackjackTurn(table, blackjack) {
+  if (blackjack.phase === "settled") return;
+  const nextSeat = blackjack.seats.find((seat) => seat.active && !seat.resolved && !seat.outcome);
+  if (nextSeat) {
+    blackjack.phase = "player-turn";
+    blackjack.currentSeat = nextSeat.seat;
+    blackjack.message = `${nextSeat.name}'s turn on Seat ${nextSeat.seat}.`;
+    return;
+  }
+  playBlackjackDealer(table, blackjack);
+}
+
+function playBlackjackDealer(table, blackjack) {
+  blackjack.phase = "dealer-turn";
+  blackjack.currentSeat = null;
+  revealDealerHoleCard(blackjack);
+  const needsDealer = blackjack.seats.some((seat) => (
+    seat.active &&
+    seat.outcome !== "lose" &&
+    !hasBlackjackNatural(seat.cards)
+  ));
+  if (needsDealer) {
+    while (dealerBlackjackShouldHit(blackjack.dealer.cards)) {
+      blackjack.dealer.cards.push(drawBlackjackCard(blackjack));
+    }
+  }
+  settleBlackjackRound(table, blackjack, "Dealer finished.");
+}
+
+function settleBlackjackRound(table, blackjack, message) {
+  revealDealerHoleCard(blackjack);
+  const dealerValue = getBlackjackHandValue(blackjack.dealer.cards);
+  const dealerBlackjack = hasBlackjackNatural(blackjack.dealer.cards);
+  const dealerBust = dealerValue.total > 21;
+  const dealerLabel = dealerBust ? "Dealer bust" : `Dealer ${dealerValue.total}`;
+  const netByPlayer = {};
+
+  for (const seat of blackjack.seats.filter((item) => item.active)) {
+    const player = table.players[seat.playerId];
+    if (!player) continue;
+    const handValue = getBlackjackHandValue(seat.cards);
+    const playerBlackjack = hasBlackjackNatural(seat.cards) && !seat.doubled;
+    let returnAmount = 0;
+    let result = seat.result || "";
+
+    if (handValue.total > 21 || seat.outcome === "lose") {
+      result = result || "Bust";
+      seat.outcome = "lose";
+      returnAmount = 0;
+    } else if (dealerBlackjack) {
+      if (playerBlackjack) {
+        result = "Push";
+        seat.outcome = "push";
+        returnAmount = seat.bet;
+      } else {
+        result = "Dealer blackjack";
+        seat.outcome = "lose";
+        returnAmount = 0;
+      }
+    } else if (playerBlackjack) {
+      result = "Blackjack pays 3:2";
+      seat.outcome = "blackjack";
+      returnAmount = seat.bet * 2.5;
+    } else if (dealerBust || handValue.total > dealerValue.total) {
+      result = `Win vs ${dealerLabel}`;
+      seat.outcome = "win";
+      returnAmount = seat.bet * 2;
+    } else if (handValue.total === dealerValue.total) {
+      result = "Push";
+      seat.outcome = "push";
+      returnAmount = seat.bet;
+    } else {
+      result = `Lose vs ${dealerLabel}`;
+      seat.outcome = "lose";
+      returnAmount = 0;
+    }
+
+    seat.resolved = true;
+    seat.result = result;
+    seat.settledNet = returnAmount - seat.bet;
+    player.bankroll += returnAmount;
+    player.handsPlayed += 1;
+    netByPlayer[player.id] = (netByPlayer[player.id] || 0) + seat.settledNet;
+    player.bestHandNet = Math.max(player.bestHandNet || 0, seat.settledNet);
+  }
+
+  for (const [playerId, net] of Object.entries(netByPlayer)) {
+    if (table.players[playerId]) table.players[playerId].lastHandNet = net;
+  }
+
+  blackjack.phase = "settled";
+  blackjack.currentSeat = null;
+  blackjack.lastCompletedAt = Date.now();
+  blackjack.message = `${message} ${dealerLabel}.`;
+}
+
+function sanitizeBlackjack(blackjack, playerId) {
+  const mySeat = blackjack.seats.find((seat) => seat.playerId === playerId)?.seat || null;
+  return {
+    shoeNumber: blackjack.shoeNumber,
+    roundNumber: blackjack.roundNumber,
+    phase: blackjack.phase,
+    cardsRemaining: blackjack.shoe.length,
+    currentSeat: blackjack.currentSeat,
+    mySeat,
+    canStart: (blackjack.phase === "waiting" || blackjack.phase === "settled") && blackjack.seats.some((seat) => seat.playerId),
+    canAct: blackjack.phase === "player-turn" && blackjack.seats.find((seat) => seat.seat === blackjack.currentSeat)?.playerId === playerId,
+    message: blackjack.message,
+    dealer: {
+      cards: blackjack.dealer.cards.map((card) => ({ ...card })),
+      total: blackjack.dealer.cards.some((card) => card.faceDown) ? null : getBlackjackHandValue(blackjack.dealer.cards).total,
+    },
+    seats: blackjack.seats.map((seat) => {
+      const total = seat.cards.length ? getBlackjackHandValue(seat.cards).total : null;
+      return {
+        seat: seat.seat,
+        playerId: seat.playerId,
+        name: seat.name,
+        bet: seat.bet,
+        cards: seat.cards.map((card) => ({ ...card })),
+        total,
+        active: seat.active,
+        resolved: seat.resolved,
+        doubled: seat.doubled,
+        outcome: seat.outcome,
+        result: seat.result,
+        settledNet: seat.settledNet,
+        self: seat.playerId === playerId,
+        turn: blackjack.currentSeat === seat.seat,
+      };
+    }),
+  };
+}
+
+function assertBlackjackSeatSetupOpen(blackjack) {
+  if (blackjack.phase !== "waiting" && blackjack.phase !== "settled") {
+    throw new Error("Blackjack seats are locked until this hand finishes.");
+  }
+  if (blackjack.phase === "settled") {
+    blackjack.phase = "waiting";
+    blackjack.currentSeat = null;
+    blackjack.message = "Seats are open for the next blackjack hand.";
+  }
+}
+
+function clearBlackjackSeat(seat) {
+  seat.playerId = null;
+  seat.name = "";
+  seat.cards = [];
+  seat.active = false;
+  seat.resolved = false;
+  seat.doubled = false;
+  seat.outcome = "";
+  seat.result = "";
+  seat.settledNet = 0;
+}
+
+function getBlackjackSeat(blackjack, seatNumber) {
+  const parsed = Number(seatNumber);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > BLACKJACK_SEATS) {
+    throw new Error("Choose a blackjack seat from 1 to 5.");
+  }
+  return blackjack.seats[parsed - 1];
+}
+
+function normalizeBlackjackBet(bet) {
+  const parsed = Number(bet) || BLACKJACK_MIN_BET;
+  const rounded = Math.round(parsed / 25) * 25;
+  return Math.max(BLACKJACK_MIN_BET, Math.min(BLACKJACK_MAX_BET, rounded));
+}
+
+function drawBlackjackCard(blackjack) {
+  if (blackjack.shoe.length <= 0) {
+    blackjack.shoe = shuffle(createBlackjackShoe());
+    blackjack.shoeNumber += 1;
+  }
+  return blackjack.shoe.pop();
+}
+
+function revealDealerHoleCard(blackjack) {
+  blackjack.dealer.cards = blackjack.dealer.cards.map((card) => ({ ...card, faceDown: false }));
+}
+
+function getBlackjackRankValue(rank) {
+  if (rank === "A") return 11;
+  if (["J", "Q", "K"].includes(rank)) return 10;
+  return Number(rank);
+}
+
+function getBlackjackHandValue(cards) {
+  let total = 0;
+  let aces = 0;
+  for (const card of cards) {
+    if (card.faceDown) continue;
+    total += getBlackjackRankValue(card.rank);
+    if (card.rank === "A") aces += 1;
+  }
+  while (total > 21 && aces > 0) {
+    total -= 10;
+    aces -= 1;
+  }
+  return { total, soft: aces > 0 };
+}
+
+function hasBlackjackNatural(cards) {
+  if (cards.length !== 2) return false;
+  let total = 0;
+  let aces = 0;
+  for (const card of cards) {
+    total += getBlackjackRankValue(card.rank);
+    if (card.rank === "A") aces += 1;
+  }
+  while (total > 21 && aces > 0) {
+    total -= 10;
+    aces -= 1;
+  }
+  return total === 21;
+}
+
+function dealerBlackjackShouldHit(cards) {
+  const value = getBlackjackHandValue(cards);
+  return value.total < 17 || (value.total === 17 && value.soft);
+}
+
+function canBlackjackDouble(seat, player) {
+  if (!seat || seat.cards.length !== 2 || seat.doubled || seat.resolved) return false;
+  if (player.bankroll < seat.bet) return false;
+  const total = getBlackjackHandValue(seat.cards).total;
+  return total === 9 || total === 10 || total === 11;
 }
 
 function assertBettingOpen(table) {
