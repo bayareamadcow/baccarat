@@ -4,6 +4,7 @@ const STARTING_BANKROLL = 5000;
 const CUT_CARD_REMAINING = 18;
 const BETTING_MS = 20000;
 const RESULT_MS = 6500;
+const IDLE_AUTO_HAND_LIMIT = 5;
 const HISTORY_LIMIT = 120;
 const LEADERBOARD_SIZE = 10;
 const BET_KEYS = ["player", "panda", "tie", "dragon", "banker"];
@@ -114,7 +115,7 @@ export class BaccaratTable {
 
       if (url.pathname.endsWith("/api/bet")) {
         const player = ensurePlayer(table, playerId, playerName, now);
-        this.placeBet(table, player, body.key, Number(body.amount || 0));
+        this.placeBet(table, player, body.key, Number(body.amount || 0), now);
         await this.saveTable(table);
         return json(this.snapshot(table, player.id, now));
       }
@@ -130,11 +131,14 @@ export class BaccaratTable {
 
       if (url.pathname.endsWith("/api/repeat")) {
         const player = ensurePlayer(table, playerId, playerName, now);
-        assertBettingOpen(table);
         const repeatTotal = getBetsTotal(player.lastBets || createEmptyBets());
         if (repeatTotal <= 0) throw new Error("No previous bet to repeat.");
         if (repeatTotal > player.bankroll) throw new Error("Not enough bankroll to repeat previous bet.");
+        resumePausedBaccaratTable(table, now, `${player.name} reopened the table.`);
+        assertBettingOpen(table);
         table.bets[player.id] = cloneBets(player.lastBets);
+        table.idleRounds = 0;
+        table.pauseAfterResult = false;
         table.message = `${player.name} repeated ${formatMoney(repeatTotal)}.`;
         await this.saveTable(table);
         return json(this.snapshot(table, player.id, now));
@@ -153,16 +157,38 @@ export class BaccaratTable {
 
       if (url.pathname.endsWith("/api/free")) {
         const player = ensurePlayer(table, playerId, playerName, now);
-        assertBettingOpen(table);
+        resumePausedBaccaratTable(table, now, `${player.name} reopened the table for a free hand.`);
+        assertBaccaratControlOpen(table);
         const count = clampFreeCount(body.count);
         if (getTableBetTotal(table) > 0) {
           throw new Error("Free hands are only available before anyone bets.");
         }
         for (let index = 0; index < count; index += 1) {
-          if (index > 0) startNextBettingRound(table, now);
+          if (index > 0) startNextBettingRound(table, now, { forceOpen: true });
           settleTableRound(table, now);
         }
+        table.pauseAfterResult = true;
         table.message = `${player.name} jumped ${count} free hand${count === 1 ? "" : "s"}. ${buildOutcomeMessage(table.lastOutcome)}`;
+        await this.saveTable(table);
+        return json(this.snapshot(table, player.id, now));
+      }
+
+      if (url.pathname.endsWith("/api/start")) {
+        const player = ensurePlayer(table, playerId, playerName, now);
+        if (table.phase === "paused") {
+          resumePausedBaccaratTable(table, now, `${player.name} opened the baccarat table.`);
+          await this.saveTable(table);
+          return json(this.snapshot(table, player.id, now));
+        }
+        assertBaccaratControlOpen(table);
+        if (getTableBetTotal(table) <= 0) {
+          table.pauseAfterResult = true;
+          settleTableRound(table, now);
+          table.message = `${player.name} started a free hand. ${buildOutcomeMessage(table.lastOutcome)}`;
+        } else {
+          settleTableRound(table, now);
+          table.message = `${player.name} started now. ${buildOutcomeMessage(table.lastOutcome)}`;
+        }
         await this.saveTable(table);
         return json(this.snapshot(table, player.id, now));
       }
@@ -183,7 +209,10 @@ export class BaccaratTable {
 
   async loadTable(now) {
     const table = await this.storage.get("table");
-    if (table) return table;
+    if (table) {
+      normalizeBaccaratIdleState(table, now);
+      return table;
+    }
     const shoe = shuffle(createShoe());
     return {
       room: "mad-cow-580",
@@ -196,6 +225,8 @@ export class BaccaratTable {
       bankerCards: [],
       lastOutcome: null,
       history: [],
+      idleRounds: 0,
+      pauseAfterResult: false,
       players: {},
       bets: {},
       message: "Betting is open. Buy in before the countdown ends.",
@@ -204,12 +235,17 @@ export class BaccaratTable {
 
   async saveTable(table) {
     await this.storage.put("table", table);
-    await this.storage.setAlarm(table.phaseEndsAt);
+    if (Number.isFinite(table.phaseEndsAt)) {
+      await this.storage.setAlarm(table.phaseEndsAt);
+    } else if (typeof this.storage.deleteAlarm === "function") {
+      await this.storage.deleteAlarm();
+    }
   }
 
   async advanceToNow(table, now) {
+    if (table.phase === "paused" || !Number.isFinite(table.phaseEndsAt)) return;
     let guard = 0;
-    while (table.phaseEndsAt <= now && guard < 120) {
+    while (Number.isFinite(table.phaseEndsAt) && table.phaseEndsAt <= now && guard < 120) {
       if (table.phase === "betting") {
         settleTableRound(table, table.phaseEndsAt);
       } else {
@@ -225,7 +261,8 @@ export class BaccaratTable {
     }
   }
 
-  placeBet(table, player, key, amount) {
+  placeBet(table, player, key, amount, now = Date.now()) {
+    resumePausedBaccaratTable(table, now, `${player.name} reopened the table.`);
     assertBettingOpen(table);
     if (!BET_KEYS.includes(key)) throw new Error("Unknown bet target.");
     if (!CHIP_VALUES.has(amount)) throw new Error("Invalid chip amount.");
@@ -235,6 +272,8 @@ export class BaccaratTable {
     }
     bets[key] += amount;
     table.bets[player.id] = bets;
+    table.idleRounds = 0;
+    table.pauseAfterResult = false;
     player.lastSeenAt = Date.now();
     table.message = `${player.name} bet ${formatMoney(amount)} on ${LABELS[key]}.`;
   }
@@ -308,7 +347,9 @@ export class BaccaratTable {
     const player = table.players[playerId];
     const playerBets = table.bets[playerId] || createEmptyBets();
     const lastOutcome = player?.lastOutcome || table.lastOutcome || null;
-    const secondsRemaining = Math.max(0, Math.ceil((table.phaseEndsAt - now) / 1000));
+    const secondsRemaining = Number.isFinite(table.phaseEndsAt)
+      ? Math.max(0, Math.ceil((table.phaseEndsAt - now) / 1000))
+      : 0;
     return {
       ok: true,
       mode: "online",
@@ -320,6 +361,10 @@ export class BaccaratTable {
       phaseEndsAt: table.phaseEndsAt,
       secondsRemaining,
       bettingOpen: table.phase === "betting",
+      paused: table.phase === "paused",
+      tableBetTotal: getTableBetTotal(table),
+      idleRounds: table.idleRounds || 0,
+      idleLimit: IDLE_AUTO_HAND_LIMIT,
       playerCards: table.playerCards,
       bankerCards: table.bankerCards,
       playerTotal: table.playerCards.length ? handTotal(table.playerCards) : null,
@@ -350,6 +395,7 @@ function settleTableRound(table, now) {
     resetBaccaratShoe(table);
   }
 
+  const tableBetTotal = getTableBetTotal(table);
   const playerCards = [drawCard(table), drawCard(table)];
   const bankerCards = [drawCard(table), drawCard(table)];
   playDrawRules(table, playerCards, bankerCards);
@@ -376,23 +422,71 @@ function settleTableRound(table, now) {
   table.lastOutcome = { ...outcome, settlements: [], payout: 0, net: 0, bets: createEmptyBets() };
   table.history.unshift(table.lastOutcome);
   table.history = table.history.slice(0, HISTORY_LIMIT);
+  table.idleRounds = tableBetTotal > 0 ? 0 : (table.idleRounds || 0) + 1;
   table.phase = "settled";
   table.phaseEndsAt = now + RESULT_MS;
   table.message = buildOutcomeMessage(outcome);
 }
 
-function startNextBettingRound(table, now) {
+function startNextBettingRound(table, now, options = {}) {
   table.roundNumber += 1;
-  table.phase = "betting";
-  table.phaseEndsAt = now + BETTING_MS;
   table.playerCards = [];
   table.bankerCards = [];
   table.bets = {};
+  if (!options.forceOpen && shouldPauseBaccaratTable(table)) {
+    pauseBaccaratTable(table);
+    return;
+  }
+
+  table.phase = "betting";
+  table.phaseEndsAt = now + BETTING_MS;
+  table.pauseAfterResult = false;
   table.message = "Betting is open. Buy in before the countdown ends.";
 
   if (table.shoe.length <= CUT_CARD_REMAINING) {
     resetBaccaratShoe(table);
     table.message = "Cut card reached. New shoe is live.";
+  }
+}
+
+function shouldPauseBaccaratTable(table) {
+  return Boolean(table.pauseAfterResult) || (table.idleRounds || 0) >= IDLE_AUTO_HAND_LIMIT;
+}
+
+function pauseBaccaratTable(table) {
+  table.phase = "paused";
+  table.phaseEndsAt = null;
+  table.pauseAfterResult = false;
+  table.message = `Baccarat table paused after ${table.idleRounds || 0} no-bet hand${(table.idleRounds || 0) === 1 ? "" : "s"}. Bet, Free Hand, or Start Now to reopen.`;
+}
+
+function resumePausedBaccaratTable(table, now, message = "Baccarat table reopened.") {
+  if (table.phase !== "paused") return false;
+  table.phase = "betting";
+  table.phaseEndsAt = now + BETTING_MS;
+  table.playerCards = [];
+  table.bankerCards = [];
+  table.bets = {};
+  table.idleRounds = 0;
+  table.pauseAfterResult = false;
+  table.message = message;
+  if (table.shoe.length <= CUT_CARD_REMAINING) {
+    resetBaccaratShoe(table);
+    table.message = "Cut card reached. New shoe is live.";
+  }
+  return true;
+}
+
+function normalizeBaccaratIdleState(table, now) {
+  if (!Number.isFinite(table.idleRounds)) table.idleRounds = 0;
+  if (typeof table.pauseAfterResult !== "boolean") table.pauseAfterResult = false;
+  if (table.phase === "paused") {
+    table.phaseEndsAt = null;
+    return;
+  }
+  if (!Number.isFinite(table.phaseEndsAt)) {
+    table.phase = "betting";
+    table.phaseEndsAt = now + BETTING_MS;
   }
 }
 
@@ -582,6 +676,9 @@ function buildLeaderboard(table, currentPlayerId) {
 }
 
 function buildTableMessage(table, secondsRemaining) {
+  if (table.phase === "paused") {
+    return table.message || "Baccarat table is paused. Bet, Free Hand, or Start Now to reopen.";
+  }
   if (table.phase === "betting") {
     return `Betting open: ${secondsRemaining}s until buy-in closes.`;
   }
@@ -1391,6 +1488,12 @@ function canBlackjackSplit(seat, hand, player) {
 
 function assertBettingOpen(table) {
   if (table.phase !== "betting") throw new Error("Betting is closed. Buy-in is locked.");
+}
+
+function assertBaccaratControlOpen(table) {
+  if (table.phase !== "betting" && table.phase !== "paused") {
+    throw new Error("Round is already in progress. Wait for the next betting window.");
+  }
 }
 
 function clampFreeCount(count) {

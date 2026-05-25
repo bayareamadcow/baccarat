@@ -135,6 +135,7 @@ const state = {
     snapshot: null,
     leaderboard: null,
     secondsRemaining: 0,
+    tableBetTotal: 0,
     lastAnimatedRound: null,
     revealInProgress: false,
     error: "",
@@ -346,7 +347,10 @@ async function freeHands(count) {
 }
 
 async function dealRound() {
-  if (state.online.enabled) return;
+  if (state.online.enabled) {
+    await onlineAction("start");
+    return;
+  }
   if (state.phase !== "betting") return;
   const totalBet = getTotalBet();
   if (totalBet <= 0) {
@@ -512,6 +516,7 @@ function applyOnlineSnapshotCore(snapshot, overrides = {}) {
   state.online.snapshot = snapshot;
   state.online.leaderboard = snapshot.leaderboard || [];
   state.online.secondsRemaining = snapshot.secondsRemaining || 0;
+  state.online.tableBetTotal = snapshot.tableBetTotal || 0;
   state.playerName = player.name;
   savePlayerName(state.playerName);
   if (document.activeElement !== dom.playerNameInput) {
@@ -861,17 +866,18 @@ function render() {
   dom.playerTotal.textContent = state.player.length ? handTotal(state.player) : "--";
   dom.bankerTotal.textContent = state.banker.length ? handTotal(state.banker) : "--";
   dom.status.textContent = state.message;
-  dom.dealButton.disabled = state.online.enabled || state.phase !== "betting";
+  const bettingControlsOpen = canUseBettingControls();
+  dom.dealButton.disabled = state.online.enabled ? !canUseOnlineStart() : state.phase !== "betting";
   dom.dealButton.textContent = state.online.enabled
     ? getOnlineDealButtonText()
     : "发牌";
   dom.clearButton.disabled = state.phase !== "betting";
-  dom.repeatButton.disabled = state.phase !== "betting"
+  dom.repeatButton.disabled = !bettingControlsOpen
     || !state.lastBets
     || getBetsTotal(state.lastBets) <= 0
     || getBetsTotal(state.lastBets) > state.bankroll;
-  dom.freeHandButton.disabled = state.phase !== "betting";
-  dom.freeFiveButton.disabled = state.phase !== "betting";
+  dom.freeHandButton.disabled = !canUseFreeHands();
+  dom.freeFiveButton.disabled = !canUseFreeHands();
   dom.reloadButton.disabled = state.phase !== "betting";
   dom.newShoeButton.disabled = state.online.enabled || state.phase !== "betting";
   dom.connectButton.textContent = state.online.enabled ? "Disconnect" : "Connect";
@@ -888,8 +894,26 @@ function render() {
 
 function getOnlineDealButtonText() {
   if (!state.online.enabled) return "发牌";
-  if (state.phase === "betting") return `买定离手 ${state.online.secondsRemaining}s`;
+  if (state.phase === "paused") return "Open Table";
+  if (state.phase === "betting" && state.online.tableBetTotal > 0) return "Start Now";
+  if (state.phase === "betting") return "Free Hand";
   return `开牌中 ${state.online.secondsRemaining}s`;
+}
+
+function canUseBettingControls() {
+  if (state.online.enabled) return state.phase === "betting" || state.phase === "paused";
+  return state.phase === "betting";
+}
+
+function canUseFreeHands() {
+  if (state.online.enabled) {
+    return (state.phase === "betting" || state.phase === "paused") && state.online.tableBetTotal <= 0;
+  }
+  return state.phase === "betting";
+}
+
+function canUseOnlineStart() {
+  return state.phase === "betting" || state.phase === "paused";
 }
 
 function getOnlineStatusText() {
@@ -926,12 +950,12 @@ function renderBets() {
   });
   dom.betBoxes.forEach((box) => {
     const key = box.dataset.betTarget;
-    box.disabled = state.phase !== "betting";
+    box.disabled = !canUseBettingControls();
     box.classList.toggle("has-bet", state.bets[key] > 0);
   });
   [...dom.chipRack.querySelectorAll("[data-chip]")].forEach((chip) => {
     chip.classList.toggle("active", Number(chip.dataset.chip) === state.selectedChip);
-    chip.disabled = state.phase !== "betting";
+    chip.disabled = !canUseBettingControls();
   });
 }
 
